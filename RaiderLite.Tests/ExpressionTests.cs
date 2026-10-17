@@ -31,6 +31,14 @@ public class ExpressionTests
         Assert.Equal(expected, ExpressionEngine.Evaluate(expr, x), 9);
     }
 
+    [Fact]
+    public void OversizedHexLiteralIsAnErrorNotAnOverflow()
+    {
+        Assert.True(double.IsNaN(ExpressionEngine.Evaluate("x*0x10000000000000000", 1)));
+        Assert.NotNull(ExpressionEngine.Validate("0x10000000000000000"));
+        Assert.Equal(ulong.MaxValue, ExpressionEngine.Evaluate("0xFFFFFFFFFFFFFFFF", 0));
+    }
+
     [Theory]
     [InlineData("sqrt(x)", 16, 4)]
     [InlineData("abs(x)", -2, 2)]

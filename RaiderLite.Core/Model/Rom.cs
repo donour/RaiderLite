@@ -7,7 +7,9 @@ public sealed class Rom
 {
     private readonly List<Table> _tables = [];
     private readonly Dictionary<string, Table> _tablesByName = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<int, List<DataCell>> _cellsByAddress = [];
+    // Every cell under each byte it occupies, so a write can refresh all cells sharing its bytes:
+    // tables may alias each other exactly or overlap partly (a uint16 over two uint8 values).
+    private readonly Dictionary<int, List<DataCell>> _cellsByByte = [];
     private bool _dirty;
 
     public Rom(RomId romId)
@@ -85,7 +87,7 @@ public sealed class Rom
     {
         Binary = binData;
         FaultyTables.Clear();
-        _cellsByAddress.Clear();
+        _cellsByByte.Clear();
 
         foreach (var table in _tables.ToList())
         {
@@ -114,6 +116,8 @@ public sealed class Rom
             }
         }
 
+        WarnAboutPartialOverlaps();
+
         // Subaru images carry their checksum list in a table named "Checksum Fix".
         ChecksumManagers.RemoveAll(c => c is SubaruChecksumFix);
         foreach (var table in _tables.Where(t => t.Name.StartsWith("Checksum Fix", StringComparison.OrdinalIgnoreCase)))
@@ -132,12 +136,48 @@ public sealed class Rom
         }
     }
 
+    /// <summary>
+    /// Tables that share some but not all of their bytes (a uint16 over a separate uint8 value) are
+    /// almost always definition mistakes: editing one silently changes the other. Exact aliases and
+    /// masked fields of one value are deliberate and not reported.
+    /// </summary>
+    private void WarnAboutPartialOverlaps()
+    {
+        var live = new HashSet<Table>(_tables);
+        string NameOf(Table t) => ReferenceEquals(t.TopLevel, t) ? t.Name : $"{t.TopLevel.Name} (axis)";
+        var reported = new HashSet<(string, string)>();
+        foreach (var (address, cells) in _cellsByByte.OrderBy(kv => kv.Key))
+        {
+            for (int i = 0; i < cells.Count; i++)
+            {
+                for (int j = i + 1; j < cells.Count; j++)
+                {
+                    var a = cells[i];
+                    var b = cells[j];
+                    if (ReferenceEquals(a.Table, b.Table) || a.Address == b.Address && a.Table.StorageType == b.Table.StorageType)
+                        continue;
+                    if (!live.Contains(a.Table.TopLevel) || !live.Contains(b.Table.TopLevel))
+                        continue;
+                    var pair = string.CompareOrdinal(NameOf(a.Table), NameOf(b.Table)) < 0
+                        ? (NameOf(a.Table), NameOf(b.Table))
+                        : (NameOf(b.Table), NameOf(a.Table));
+                    if (reported.Count < 50 && reported.Add(pair))
+                        Warnings.Add($"{pair.Item1} and {pair.Item2} partly overlap at 0x{address:X}: editing one changes the other.");
+                }
+            }
+        }
+    }
+
     internal void RegisterCell(DataCell cell)
     {
         int address = cell.Address;
-        if (!_cellsByAddress.TryGetValue(address, out var list))
-            _cellsByAddress[address] = list = [];
-        list.Add(cell);
+        int length = StorageType.ByteLength(cell.Table.StorageType);
+        for (int i = 0; i < length; i++)
+        {
+            if (!_cellsByByte.TryGetValue(address + i, out var list))
+                _cellsByByte[address + i] = list = [];
+            list.Add(cell);
+        }
     }
 
     /// <summary>Called after a cell wrote its bytes: keeps aliased cells in sync and notifies views.</summary>
@@ -147,15 +187,26 @@ public sealed class Rom
             History.Record(cell, oldValue, cell.BinValue);
 
         var changedTables = new HashSet<Table> { cell.Table };
-        if (_cellsByAddress.TryGetValue(cell.Address, out var aliases))
+        // The bytes that may have changed: the cell's own, or in the Bosch subtract layout (where a
+        // write rewrites the earlier stored values) the whole table's.
+        IEnumerable<DataCell> written = cell.Table.DataLayout == DataLayout.BoschSubtract
+            ? cell.Table.Cells.Where(c => !c.IsStatic)
+            : [cell];
+        var aliases = new HashSet<DataCell>();
+        int length = StorageType.ByteLength(cell.Table.StorageType);
+        foreach (var w in written)
         {
-            foreach (var alias in aliases)
+            for (int i = 0; i < length; i++)
             {
-                if (ReferenceEquals(alias, cell))
-                    continue;
-                alias.RefreshFromMemory();
-                changedTables.Add(alias.Table);
+                if (_cellsByByte.TryGetValue(w.Address + i, out var sharing))
+                    aliases.UnionWith(sharing);
             }
+        }
+        aliases.Remove(cell);
+        foreach (var alias in aliases)
+        {
+            alias.RefreshFromMemory();
+            changedTables.Add(alias.Table);
         }
 
         IsDirty = true;

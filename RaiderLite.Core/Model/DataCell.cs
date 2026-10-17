@@ -11,27 +11,26 @@ public sealed class DataCell
     private double _maxAllowedBin;
     private bool _rangeComputed;
 
+    // Cells only exist once their table has been read from an image, so unlike Table.Rom
+    // (null while a definition is being parsed) this is never null.
+    private readonly Rom _rom;
+
     /// <summary>Creates a static (label) cell for a static axis.</summary>
-    internal DataCell(Table table, int index, string? staticText)
+    internal DataCell(Table table, Rom rom, int index, string staticText)
     {
         Table = table;
+        _rom = rom;
         Index = index;
         BitMask = table.BitMask;
-        if (staticText != null)
-        {
-            var tokens = staticText.Split(['\t', '\n', '\r', '\f'], StringSplitOptions.RemoveEmptyEntries);
-            StaticText = tokens.Length > 0 ? tokens[0] : "";
-        }
-        else
-        {
-            StaticText = "";
-        }
+        var tokens = staticText.Split(['\t', '\n', '\r', '\f'], StringSplitOptions.RemoveEmptyEntries);
+        StaticText = tokens.Length > 0 ? tokens[0] : "";
     }
 
     /// <summary>Creates a cell backed by the image at <paramref name="index"/>.</summary>
-    internal DataCell(Table table, int index, int bitMask = 0)
+    internal DataCell(Table table, Rom rom, int index, int bitMask = 0)
     {
         Table = table;
+        _rom = rom;
         Index = index;
         SetBitMask(table.BitMask);
         SetBitMask(bitMask);
@@ -91,7 +90,7 @@ public sealed class DataCell
 
     public bool IsChanged => !IsStatic && BinValue != OriginalValue;
 
-    public double RealValue => Table.CurrentScale?.ToReal(BinValue) ?? BinValue;
+    public double RealValue => Table.CurrentScale.ToReal(BinValue);
 
     public double CompareValue => BinValue - CompareToValue;
 
@@ -100,7 +99,7 @@ public sealed class DataCell
         get
         {
             var scale = Table.CurrentScale;
-            return scale == null ? CompareValue : scale.ToReal(BinValue) - scale.ToReal(CompareToValue);
+            return scale.ToReal(BinValue) - scale.ToReal(CompareToValue);
         }
     }
 
@@ -110,8 +109,8 @@ public sealed class DataCell
         get
         {
             var scale = Table.CurrentScale;
-            double real = scale?.ToReal(BinValue) ?? BinValue;
-            double compare = scale?.ToReal(CompareToValue) ?? CompareToValue;
+            double real = scale.ToReal(BinValue);
+            double compare = scale.ToReal(CompareToValue);
             return compare != 0.0 ? (real - compare) / Math.Abs(compare) : real - compare;
         }
     }
@@ -170,7 +169,7 @@ public sealed class DataCell
 
     private double ReadValue(int index)
     {
-        var input = Table.Rom!.Binary;
+        var input = _rom.Binary;
         int st = Table.StorageType;
         int address = Table.StorageAddress + index * StorageType.ByteLength(st) - Table.RamOffset;
 
@@ -201,22 +200,14 @@ public sealed class DataCell
         BinValue = ReadValue();
     }
 
-    private bool CanWrite
-    {
-        get
-        {
-            var settings = CoreSettings.Current;
-            return Table.UserLevel <= settings.UserLevel && (Table.UserLevel < 5 || settings.SaveDebugTables);
-        }
-    }
-
     private void WriteToImage()
     {
-        if (Table.IsChecksumFixTable || !CanWrite)
+        // Whether a table may be edited is decided before a value is accepted (SetBinValue): once it
+        // is, the bytes are always written, so undo/redo can't leave the image and the values apart.
+        if (Table.IsChecksumFixTable)
             return;
 
-        var rom = Table.Rom!;
-        var binData = rom.Binary;
+        var binData = _rom.Binary;
         int st = Table.StorageType;
         int ramOffset = Table.RamOffset;
         int storageAddress = Table.StorageAddress;
@@ -241,6 +232,11 @@ public sealed class DataCell
             }
 
             int finalValue = (int)(long)value;
+            if (st is StorageType.Movi20 or StorageType.Movi20S)
+            {
+                ByteCodec.WriteMovi20(binData, index * 3 + storageAddress - ramOffset, finalValue);
+                return;
+            }
             int mask = BitMask;
             if (mask != 0)
                 finalValue <<= MaskUtil.FirstOneOfMask(mask);
@@ -278,15 +274,58 @@ public sealed class DataCell
 
         if (Table.UserLevel > CoreSettings.Current.UserLevel)
             throw new UserLevelException(Table.UserLevel);
+        if (Table.UserLevel >= 5 && !CoreSettings.Current.SaveDebugTables)
+            throw new UserLevelException(Table.UserLevel, "Debug (level 5) tables are read-only while \"Save debug tables\" is off in Settings.");
 
-        double checkedValue = Math.Clamp(newBinValue, MinAllowedBin, MaxAllowedBin);
+        double checkedValue = Representable(Math.Clamp(newBinValue, MinAllowedBin, MaxAllowedBin));
         if (BinValue == checkedValue)
             return;
 
         double old = BinValue;
         BinValue = checkedValue;
         WriteToImage();
-        Table.Rom?.OnCellWritten(this, old);
+        _rom.OnCellWritten(this, old);
+    }
+
+    /// <summary>
+    /// The nearest value the cell's encoding can store, so the value shown (and recorded for undo)
+    /// is always exactly what the image holds.
+    /// </summary>
+    private double Representable(double value)
+    {
+        int st = Table.StorageType;
+        if (st == StorageType.Float)
+            return (float)value;
+        if (st is StorageType.Movi20 or StorageType.Movi20S)
+        {
+            // The instruction's own form decides, as when reading and writing: MOVI20S holds multiples of 256.
+            if (ByteCodec.IsMovi20S(_rom.Binary, Address))
+                return Math.Clamp(Math.Round(value / 256, MidpointRounding.AwayFromZero) * 256, StorageType.Movi20SMinValue, StorageType.Movi20SMaxValue);
+            return Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), StorageType.Movi20MinValue, StorageType.Movi20MaxValue);
+        }
+        value = Math.Round(value, MidpointRounding.AwayFromZero);
+        return Table.DataLayout == DataLayout.BoschSubtract ? BoschRepresentable(value) : value;
+    }
+
+    /// <summary>
+    /// Bosch subtract layout: value[i] = value[i+1] - stored[i], with value[n] = 2^bits. A value
+    /// must stay within one stored step of the next value, and of the previous one (whose stored
+    /// value is rewritten to keep it); otherwise the bytes would read back as something else.
+    /// </summary>
+    private double BoschRepresentable(double value)
+    {
+        int bits = 8 * StorageType.ByteLength(Table.StorageType);
+        double storedMin = Table.Signed ? -Math.Pow(2, bits - 1) : 0;
+        double storedMax = Table.Signed ? Math.Pow(2, bits - 1) - 1 : Math.Pow(2, bits) - 1;
+        double next = Index + 1 < Table.DataSize ? Table.Cells[Index + 1].BinValue : Math.Pow(2, 8 * Table.StorageType);
+        double lo = next - storedMax, hi = next - storedMin;
+        if (Index > 0)
+        {
+            double previous = Table.Cells[Index - 1].BinValue;
+            lo = Math.Max(lo, previous + storedMin);
+            hi = Math.Min(hi, previous + storedMax);
+        }
+        return lo <= hi ? Math.Clamp(value, lo, hi) : BinValue;
     }
 
     /// <summary>Writes a value as part of an undo/redo: no clamping or user level checks.</summary>
@@ -297,7 +336,7 @@ public sealed class DataCell
         double old = BinValue;
         BinValue = value;
         WriteToImage();
-        Table.Rom?.OnCellWritten(this, old, recordHistory: false);
+        _rom.OnCellWritten(this, old, recordHistory: false);
     }
 
     /// <summary>Sets the value from real-world text. Invalid numbers and "x" are ignored.</summary>
@@ -314,7 +353,7 @@ public sealed class DataCell
     public void SetRealValue(double real)
     {
         var scale = Table.CurrentScale;
-        double result = scale == null ? real : scale.ToBin(real, Table.StorageType, Table.Signed);
+        double result = scale.ToBin(real, Table.StorageType, Table.Signed);
         if (double.IsNaN(result))
             return;
         if (Table.StorageType != StorageType.Float)
@@ -327,8 +366,6 @@ public sealed class DataCell
     public void Increment(double increment)
     {
         var scale = Table.CurrentScale;
-        if (scale == null)
-            return;
         double oldValue = RealValue;
 
         if (scale.CoarseIncrement < 0.0)
@@ -367,5 +404,5 @@ public sealed class DataCell
 
     public void SetRevertPoint() => OriginalValue = BinValue;
 
-    public override string ToString() => IsStatic ? StaticText! : RealValue.ToString(System.Globalization.CultureInfo.CurrentCulture);
+    public override string ToString() => StaticText ?? RealValue.ToString(System.Globalization.CultureInfo.CurrentCulture);
 }

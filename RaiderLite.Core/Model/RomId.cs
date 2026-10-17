@@ -86,6 +86,15 @@ public sealed class RomId
         return ecuId.Equals(InternalIdString, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// How many bytes of the image the ID checks: when several definitions match (one ID can be a
+    /// prefix of another, e.g. "LOTUS EVORA " and "LOTUS EVORA GT430 ..."), the longest is the most specific.
+    /// </summary>
+    public int MatchLength =>
+        InternalIdString.Length > 2 && InternalIdString.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? (InternalIdString.Length - 2) / 2
+            : InternalIdAddress < 0 ? 0 : InternalIdString.Length;
+
     public RomId Clone() => (RomId)MemberwiseClone();
 
     public override string ToString()

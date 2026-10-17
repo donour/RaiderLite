@@ -45,6 +45,21 @@ public class RobustnessTests
     }
 
     [Fact]
+    public void AxisBasedOnAMapIsIgnoredWithAWarning()
+    {
+        var rom = TestData.LoadInline(Rom("", """
+            <table name="M" type="3D" storageaddress="0x0" storagetype="uint8" sizex="2" sizey="2">
+              <table type="X Axis" name="mx" storageaddress="0x10" storagetype="uint8"/><table type="Y Axis" name="my" storageaddress="0x12" storagetype="uint8"/>
+            </table>
+            <table name="C" type="2D" storageaddress="0x20" storagetype="uint8" sizex="2">
+              <table type="X Axis" name="cx" base="M" storageaddress="0x30" storagetype="uint8"/>
+            </table>
+            """), new byte[64]);
+        Assert.IsType<Table1D>(((Table2D)rom.GetTable("C")!).Axis);
+        Assert.Contains(rom.Warnings, w => w.Contains("not a 1D table", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void BitPositionOutOfRangeIsIgnored()
     {
         var rom = TestData.LoadInline(Rom("", """

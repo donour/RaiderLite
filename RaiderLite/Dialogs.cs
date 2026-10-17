@@ -153,12 +153,12 @@ public sealed class PropertiesForm : DialogBase
             }
             var s = axis.CurrentScale;
             yield return (label, $"{axis.Name} at 0x{axis.StorageAddress:X}, {StorageType.Describe(axis.StorageType, axis.Signed)}, {axis.DataSize} values" +
-                                 (s != null && !s.IsRaw ? $", {s.Unit}: {s.Expression}" : ""));
+                                 (!s.IsRaw ? $", {s.Unit}: {s.Expression}" : ""));
         }
 
-        if (table.Presets is { Presets.Count: > 0 } presets)
+        if (table.Presets.Presets.Count > 0)
         {
-            foreach (var p in presets.Presets)
+            foreach (var p in table.Presets.Presets)
                 yield return (table is TableBitwiseSwitch ? "Bit" : "State", $"{p.Name}: {p.DataText}");
         }
     }
@@ -344,10 +344,11 @@ public sealed class SettingsForm : DialogBase
     private readonly TextBox _defaultScale = new() { Width = 200 };
     private readonly CheckBox _scaleHeaders = new() { Text = "Switch axis scaling with the table's scaling", AutoSize = true };
     private readonly CheckBox _displayHigh = new() { Text = "Show tables above the user level (read-only)", AutoSize = true };
-    private readonly CheckBox _saveDebug = new() { Text = "Write debug-level (5) tables to the image", AutoSize = true };
+    private readonly CheckBox _saveDebug = new() { Text = "Allow editing debug-level (5) tables", AutoSize = true };
     private readonly CheckBox _valueLimit = new() { Text = "Highlight values outside the storage range", AutoSize = true };
     private readonly CheckBox _colorAxis = new() { Text = "Colour axis cells", AutoSize = true };
     private readonly CheckBox _sortTree = new() { Text = "Sort tables alphabetically", AutoSize = true };
+    private readonly CheckBox _showGraphs = new() { Text = "Show graphs when opening tables (Ctrl+G toggles)", AutoSize = true };
     private readonly CheckBox _singleClick = new() { Text = "Open and close tables with a single click (otherwise double-click)", AutoSize = true };
     private readonly NumericUpDown _cellWidth = new() { Minimum = 24, Maximum = 200, Width = 70 };
     private readonly NumericUpDown _cellHeight = new() { Minimum = 14, Maximum = 60, Width = 70 };
@@ -371,6 +372,7 @@ public sealed class SettingsForm : DialogBase
         _colorAxis.Checked = settings.ColorAxis;
         _sortTree.Checked = settings.SortTableTree;
         _singleClick.Checked = settings.SingleClickTables;
+        _showGraphs.Checked = settings.ShowGraphsByDefault;
         _cellWidth.Value = Math.Clamp(settings.CellWidth, 24, 200);
         _cellHeight.Value = Math.Clamp(settings.CellHeight, 14, 60);
 
@@ -394,6 +396,7 @@ public sealed class SettingsForm : DialogBase
         Full(_valueLimit);
         Full(_sortTree);
         Full(_singleClick);
+        Full(_showGraphs);
         Full(_colorAxis);
         Row("Minimum cell width", _cellWidth);
         Row("Cell height", _cellHeight);
@@ -459,6 +462,7 @@ public sealed class SettingsForm : DialogBase
         s.ColorAxis = _colorAxis.Checked;
         s.SortTableTree = _sortTree.Checked;
         s.SingleClickTables = _singleClick.Checked;
+        s.ShowGraphsByDefault = _showGraphs.Checked;
         s.CellWidth = (int)_cellWidth.Value;
         s.CellHeight = (int)_cellHeight.Value;
         s.MinColor = _colorButtons["Min"].BackColor;

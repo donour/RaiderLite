@@ -177,7 +177,7 @@ public static class TableClipboard
         if (cell.IsStatic || token.Equals("x", StringComparison.OrdinalIgnoreCase))
             return;
         // Leave cells alone whose displayed value already matches (avoids rounding drift).
-        var format = cell.Table.CurrentScale?.Format;
+        var format = cell.Table.CurrentScale.Format;
         if (ValueFormatter.Format(cell.RealValue, format) == token)
             return;
         cell.SetRealValue(token);

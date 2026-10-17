@@ -28,14 +28,13 @@ namespace RaiderLite
     /// <summary>Logs unexpected errors to %APPDATA%\RaiderLite\error.log and tells the user.</summary>
     internal static class ErrorReporter
     {
-        public static string LogPath { get; } = Path.Combine(
-            Path.GetDirectoryName(AppSettings.SettingsPath) ?? Path.GetTempPath(), "error.log");
+        public static string LogPath { get; } = Path.Combine(AppSettings.SettingsDirectory, "error.log");
 
         public static void Log(Exception? ex)
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+                Directory.CreateDirectory(AppSettings.SettingsDirectory);
                 File.AppendAllText(LogPath, $"[{DateTime.Now:O}] {ex}{Environment.NewLine}{Environment.NewLine}");
             }
             catch (Exception logError) when (logError is IOException or UnauthorizedAccessException)

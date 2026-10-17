@@ -305,7 +305,10 @@ public static class ExpressionEngine
                     _pos++;
                 if (_pos == hexStart)
                     throw Error("Malformed hex number");
-                double hv = Convert.ToUInt64(text[hexStart.._pos], 16);
+                if (!ulong.TryParse(text.AsSpan(hexStart, _pos - hexStart), System.Globalization.NumberStyles.AllowHexSpecifier,
+                        System.Globalization.CultureInfo.InvariantCulture, out ulong hex))
+                    throw Error("Hex number too large");
+                double hv = hex;
                 return _ => hv;
             }
 

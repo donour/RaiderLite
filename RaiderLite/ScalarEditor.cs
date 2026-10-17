@@ -88,15 +88,15 @@ public sealed class ScalarEditor : UserControl
     public void RefreshValue()
     {
         var scale = _table.CurrentScale;
-        _shownText = ValueFormatter.Format(_cell.RealValue, scale?.Format);
+        _shownText = ValueFormatter.Format(_cell.RealValue, scale.Format);
         if (!_value.Focused || _value.Text == _shownText || !_value.Modified)
         {
             _value.Text = _shownText;
             _value.Modified = false;
         }
-        _units.Text = scale == null ? "raw \u25be" : UnitText(scale);
+        _units.Text = UnitText(scale);
 
-        bool editable = !_table.Locked && _table.UserLevel <= CoreSettings.Current.UserLevel;
+        bool editable = _table.ReadOnlyReason == null;
         _value.ReadOnly = !editable;
         _field.FieldColor = _cell.IsOutOfRange && AppSettings.Current.ValueLimitWarning ? OutOfRange
             : _cell.BinValue > _cell.OriginalValue ? Increased
@@ -106,7 +106,7 @@ public sealed class ScalarEditor : UserControl
         long raw = (long)_cell.BinValue;
         var tip = $"Raw {_cell.BinValue.ToString(CultureInfo.CurrentCulture)} (0x{raw & 0xFFFFFFFF:X}) at 0x{_cell.Address:X}, {StorageType.Describe(_table.StorageType, _table.Signed)}";
         if (_cell.IsChanged)
-            tip += $"\nChanged from {ValueFormatter.Format(scale?.ToReal(_cell.OriginalValue) ?? _cell.OriginalValue, scale?.Format)} (right-click to revert)";
+            tip += $"\nChanged from {ValueFormatter.Format(scale.ToReal(_cell.OriginalValue), scale.Format)} (right-click to revert)";
         if (_table.Locked)
             tip += "\nLocked";
         else if (!editable)
@@ -137,7 +137,7 @@ public sealed class ScalarEditor : UserControl
     private void Step(int direction, bool coarse)
     {
         var scale = _table.CurrentScale;
-        if (scale == null || _value.ReadOnly)
+        if (_value.ReadOnly)
             return;
         Commit();
         double step = coarse ? scale.CoarseIncrement : scale.FineIncrement;

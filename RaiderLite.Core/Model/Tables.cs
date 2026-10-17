@@ -54,8 +54,7 @@ public class Table2D : Table
     {
         _axis.Populate(rom, warnings);
         base.Populate(rom, warnings);
-        if (CurrentScale != null)
-            SyncAxisScale(_axis, CurrentScale);
+        SyncAxisScale(_axis, CurrentScale);
     }
 
     public override void SetCurrentScale(Scale scale)
@@ -210,7 +209,7 @@ public class Table3D : Table
                 if (SwapXY)
                     (x, y) = (y, x);
 
-                var cell = new DataCell(this, offset);
+                var cell = new DataCell(this, rom, offset);
                 rom.RegisterCell(cell);
                 _data[x, y] = cell;
                 offset += j == jMax - 1 ? 1 + SkipCells : 1;
@@ -220,11 +219,8 @@ public class Table3D : Table
         Cells = DataCells.ToArray();
         CalcCellRanges();
         AddScale(new Scale());
-        if (CurrentScale != null)
-        {
-            SyncAxisScale(_xAxis, CurrentScale);
-            SyncAxisScale(_yAxis, CurrentScale);
-        }
+        SyncAxisScale(_xAxis, CurrentScale);
+        SyncAxisScale(_yAxis, CurrentScale);
     }
 
     public override void SetCurrentScale(Scale scale)
@@ -394,7 +390,7 @@ public class TableBitwiseSwitch : TableSwitch
         for (int i = 0; i < _bits.Count; i++)
         {
             // Every bit reads the same address with its own mask.
-            Cells[i] = new DataCell(this, i, MaskUtil.BitToMask(_bits[i]));
+            Cells[i] = new DataCell(this, rom, i, MaskUtil.BitToMask(_bits[i]));
             rom.RegisterCell(Cells[i]);
         }
         CalcCellRanges();

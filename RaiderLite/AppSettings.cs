@@ -13,10 +13,29 @@ public sealed class AppSettings
         Converters = { new ColorJsonConverter() },
     };
 
+    private static readonly string DefaultSettingsPath =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RaiderLite", "settings.json");
+
     /// <summary>Settings file; RAIDERLITE_SETTINGS overrides the default location.</summary>
-    public static string SettingsPath { get; } = Environment.GetEnvironmentVariable("RAIDERLITE_SETTINGS") is { Length: > 0 } custom
-        ? custom
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RaiderLite", "settings.json");
+    public static string SettingsPath { get; } = ResolveSettingsPath();
+
+    /// <summary>Folder of the settings file (also where the error log goes).</summary>
+    public static string SettingsDirectory => Path.GetDirectoryName(SettingsPath) ?? Path.GetTempPath();
+
+    private static string ResolveSettingsPath()
+    {
+        if (Environment.GetEnvironmentVariable("RAIDERLITE_SETTINGS") is not { Length: > 0 } custom)
+            return DefaultSettingsPath;
+        try
+        {
+            // A bare file name would have no directory to create; make it absolute.
+            return Path.GetFullPath(custom);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException or System.Security.SecurityException)
+        {
+            return DefaultSettingsPath;
+        }
+    }
 
     public static AppSettings Current { get; private set; } = new();
 
@@ -38,6 +57,13 @@ public sealed class AppSettings
     public bool SortTableTree { get; set; }
     /// <summary>Click a table in the tree to open it, click again to close it (RomRaider's default).</summary>
     public bool SingleClickTables { get; set; } = true;
+
+    // Graphs
+    /// <summary>Open table windows with their graph shown (graphs start hidden by default).</summary>
+    public bool ShowGraphsByDefault { get; set; }
+
+    /// <summary>Last graph style chosen for maps: 3D surface (true) or lines.</summary>
+    public bool MapGraphSurface { get; set; }
 
     // Table display
     public int CellWidth { get; set; } = 48;
@@ -77,7 +103,7 @@ public sealed class AppSettings
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+            Directory.CreateDirectory(SettingsDirectory);
             File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

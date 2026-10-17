@@ -34,9 +34,10 @@ public abstract class Table
 
     public List<Scale> Scales { get; private set; } = [];
 
-    public Scale? CurrentScale { get; protected set; }
+    /// <summary>The scaling values are shown in. A raw scale until the definition adds one.</summary>
+    public Scale CurrentScale { get; protected set; } = new();
 
-    public PresetManager? Presets { get; private set; }
+    public PresetManager Presets { get; private set; } = new();
 
     public int BitMask { get; private set; }
 
@@ -67,6 +68,24 @@ public abstract class Table
     public int UserLevel { get; set; }
 
     public bool Locked { get; set; }
+
+    /// <summary>Why the values can't be changed right now, or null if they can.</summary>
+    public string? ReadOnlyReason
+    {
+        get
+        {
+            var settings = CoreSettings.Current;
+            if (Locked)
+                return "locked";
+            if (IsChecksumFixTable)
+                return "checksum table";
+            if (UserLevel > settings.UserLevel)
+                return $"requires user level {UserLevel}";
+            if (UserLevel >= 5 && !settings.SaveDebugTables)
+                return "debug table, read-only (see Settings)";
+            return null;
+        }
+    }
 
     public string LogParam { get; set; } = "";
 
@@ -132,8 +151,9 @@ public abstract class Table
         copy.DataChanged = null;
         copy.ScaleChanged = null;
         copy.Scales = Scales.Select(s => s.Clone()).ToList();
-        copy.CurrentScale = CurrentScale == null ? null : copy.Scales.ElementAtOrDefault(Scales.IndexOf(CurrentScale));
-        copy.Presets = Presets?.Clone();
+        int current = Scales.IndexOf(CurrentScale);
+        copy.CurrentScale = current >= 0 ? copy.Scales[current] : new Scale();
+        copy.Presets = Presets.Clone();
         copy._staticTexts = [.. _staticTexts];
         copy.Cells = [];
         copy.Rom = null;
@@ -174,7 +194,7 @@ public abstract class Table
         {
             Cells = new DataCell[DataSize];
             for (int i = 0; i < DataSize; i++)
-                Cells[i] = new DataCell(this, i, i < _staticTexts.Count ? _staticTexts[i] : "");
+                Cells[i] = new DataCell(this, rom, i, i < _staticTexts.Count ? _staticTexts[i] : "");
             return;
         }
 
@@ -185,7 +205,7 @@ public abstract class Table
         Cells = new DataCell[DataSize];
         for (int i = 0; i < DataSize; i++)
         {
-            Cells[i] = new DataCell(this, i);
+            Cells[i] = new DataCell(this, rom, i);
             rom.RegisterCell(Cells[i]);
         }
 
@@ -230,8 +250,8 @@ public abstract class Table
         }
     }
 
-    public double MaxReal => CurrentScale?.ToReal(MaxBin) ?? MaxBin;
-    public double MinReal => CurrentScale?.ToReal(MinBin) ?? MinBin;
+    public double MaxReal => CurrentScale.ToReal(MaxBin);
+    public double MinReal => CurrentScale.ToReal(MinBin);
 
     // ----- scales -----
 
@@ -251,7 +271,8 @@ public abstract class Table
         }
         Scales.Add(scale);
 
-        if (CurrentScale == null ||
+        // The initial raw placeholder isn't in Scales: the first scaling added replaces it.
+        if (!Scales.Contains(CurrentScale) ||
             CoreSettings.Current.DefaultScale.Equals(scale.Category, StringComparison.OrdinalIgnoreCase) ||
             "Default".Equals(scale.Category, StringComparison.OrdinalIgnoreCase))
         {
@@ -305,7 +326,6 @@ public abstract class Table
     /// <summary><c>&lt;bit&gt;</c> element: adds without checking duplicates.</summary>
     public virtual void SetPresetValues(string name, string value)
     {
-        Presets ??= new PresetManager();
         Presets.SetPresetValues(this, name, value, 0, false);
     }
 

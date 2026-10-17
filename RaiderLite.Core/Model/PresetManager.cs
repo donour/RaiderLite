@@ -34,10 +34,12 @@ public sealed class PresetManager
         return copy;
     }
 
-    private static long ParseValue(string s, Table table)
+    private static long ParseValue(string s, Table table, bool isBitMask)
     {
         uint u = Convert.ToUInt32(s.Trim().Replace("0x", "", StringComparison.OrdinalIgnoreCase), 16);
-        if (table.StorageType > 1 && table.Endian == Endian.Little)
+        // Preset data is raw bytes in file order, so multi-byte little-endian values are swapped.
+        // A bit flag ("1") is a value, not bytes: swapped it would become 256 and never match.
+        if (!isBitMask && table.StorageType > 1 && table.Endian == Endian.Little)
         {
             if (table.StorageType == 2)
                 u = BinaryPrimitives.ReverseEndianness((ushort)(u & 0xFFFF));
@@ -61,7 +63,7 @@ public sealed class PresetManager
         foreach (var s in data.Split(data.Contains(',') ? ',' : ' '))
         {
             if (s.Trim().Length > 0)
-                values.Add(ParseValue(s, table));
+                values.Add(ParseValue(s, table, isBitMask));
         }
         return new PresetEntry
         {

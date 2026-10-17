@@ -33,7 +33,7 @@ public sealed class MainForm : Form
     private readonly ToolStripMenuItem _displayHighTables = new("Display &High Level Tables");
     private readonly ToolStripMenuItem _sortTree = new("&Sort Tables Alphabetically");
     private readonly System.Windows.Forms.Timer _filterTimer = new() { Interval = 250 };
-    private MdiClient? _mdiClient;
+    private readonly MdiClient _mdiClient;
     private TableForm? _activeTable;
 
     public MainForm(string[] filesToOpen)
@@ -68,9 +68,9 @@ public sealed class MainForm : Form
         Controls.Add(Toolbar);
         Controls.Add(_menu);
         MainMenuStrip = _menu;
-        _mdiClient = Controls.OfType<MdiClient>().FirstOrDefault();
-        if (_mdiClient != null)
-            _mdiClient.BackColor = SystemColors.AppWorkspace;
+        // IsMdiContainer created the client area.
+        _mdiClient = Controls.OfType<MdiClient>().First();
+        _mdiClient.BackColor = SystemColors.AppWorkspace;
 
         _tree.NodeMouseDoubleClick += (_, e) => { if (!AppSettings.Current.SingleClickTables) OpenNode(e.Node); };
         _tree.NodeMouseClick += TreeNodeMouseClick;
@@ -143,7 +143,7 @@ public sealed class MainForm : Form
     public IReadOnlyList<Rom> OpenRoms => _roms;
 
     /// <summary>Size of the MDI area that table windows are fitted into.</summary>
-    public Size MdiClientArea => _mdiClient?.ClientSize ?? ClientSize;
+    public Size MdiClientArea => _mdiClient.ClientSize;
 
     // ----- menus -----
 
@@ -276,6 +276,7 @@ public sealed class MainForm : Form
               Shift+I / V / H        interpolate / vertically / horizontally
               Ctrl+C / Ctrl+V        copy selection / paste (RomRaider and spreadsheet formats)
               Ctrl+Z / Ctrl+Y        undo / redo
+              Ctrl+G                 show / hide the graph (curves and maps)
               Ctrl+A                 select all cells (click the top-left corner for data only)
 
             Main window:
@@ -367,7 +368,7 @@ public sealed class MainForm : Form
         {
             var scale = t.CurrentScale;
             SetStatus($"{t.Name}  |  {t.ShapeDescription}  |  0x{t.StorageAddress:X}  |  {StorageType.Describe(t.StorageType, t.Signed)}" +
-                      (scale != null && !scale.IsRaw ? $"  |  {scale.Unit}" : ""));
+                      (!scale.IsRaw ? $"  |  {scale.Unit}" : ""));
         }
     }
 
@@ -393,7 +394,7 @@ public sealed class MainForm : Form
             {
                 parts.Add($"X: {AxisText(t2.Axis, current.ColumnIndex)}");
             }
-            parts.Add($"{ValueFormatter.Format(cell.RealValue, scale?.Format)} {(scale is { IsRaw: false } ? scale.Unit : "")}".Trim());
+            parts.Add($"{ValueFormatter.Format(cell.RealValue, scale.Format)} {(scale.IsRaw ? "" : scale.Unit)}".Trim());
             parts.Add($"raw {cell.BinValue.ToString(CultureInfo.CurrentCulture)} (0x{(long)cell.BinValue & 0xFFFFFFFF:X})");
             parts.Add($"@0x{cell.Address:X}");
         }
@@ -402,7 +403,7 @@ public sealed class MainForm : Form
         if (selected.Count > 1)
         {
             var values = selected.Select(c => c.RealValue).ToList();
-            var fmt = form.Table.CurrentScale?.Format;
+            var fmt = form.Table.CurrentScale.Format;
             parts.Add($"{selected.Count} selected: min {ValueFormatter.Format(values.Min(), fmt)}, max {ValueFormatter.Format(values.Max(), fmt)}, avg {ValueFormatter.Format(values.Average(), "0.###")}");
         }
         SetCellInfo(string.Join("   ", parts));
@@ -421,7 +422,7 @@ public sealed class MainForm : Form
         if (cell.IsStatic)
             return cell.StaticText ?? "";
         var scale = axis.CurrentScale;
-        return $"{ValueFormatter.Format(cell.RealValue, scale?.Format)} {(scale is { IsRaw: false } ? scale.Unit : "")}".Trim();
+        return $"{ValueFormatter.Format(cell.RealValue, scale.Format)} {(scale.IsRaw ? "" : scale.Unit)}".Trim();
     }
 
     // ----- opening images -----
@@ -486,8 +487,11 @@ public sealed class MainForm : Form
         {
             var definitionFiles = AppSettings.Current.DefinitionFiles.ToList();
             var errors = new List<string>();
-            var match = await Task.Run(() =>
+            // Every definition is checked: the first match isn't necessarily the right one when one
+            // ID is a prefix of another, and a wrong definition would edit the wrong addresses.
+            var matches = await Task.Run(() =>
             {
+                var found = new List<(DefinitionDocument Doc, RomDefinitionInfo Info)>();
                 foreach (var defPath in definitionFiles)
                 {
                     if (!File.Exists(defPath))
@@ -498,21 +502,21 @@ public sealed class MainForm : Form
                     try
                     {
                         var doc = LoadDefinition(defPath);
-                        if (doc.FindMatch(image) is { } info)
-                            return (doc, info);
+                        found.AddRange(doc.FindMatches(image).Select(info => (doc, info)));
                     }
                     catch (DefinitionException ex)
                     {
                         errors.Add(ex.Message);
                     }
                 }
-                return ((DefinitionDocument, RomDefinitionInfo)?)null;
+                // Most specific first; definition list order otherwise.
+                return found.OrderByDescending(m => m.Info.Id.MatchLength).ToList();
             });
             UseWaitCursor = false;
             foreach (var error in errors)
                 SetStatus(error);
 
-            (DefinitionDocument Doc, RomDefinitionInfo Info)? chosen = match;
+            (DefinitionDocument Doc, RomDefinitionInfo Info)? chosen = matches.Count > 0 ? matches[0] : null;
             chosen ??= ChooseDefinitionManually(path, image, errors);
             if (chosen is not { } c)
             {
@@ -523,6 +527,12 @@ public sealed class MainForm : Form
             UseWaitCursor = true;
             SetStatus($"Loading {Path.GetFileName(path)} with {c.Info.Id.XmlId}...");
             var rom = await Task.Run(() => RomUnmarshaller.Load(c.Doc, c.Info.Node, image, path));
+            foreach (var (doc, info) in matches.Where(m => !ReferenceEquals(m.Info, c.Info)))
+            {
+                rom.Warnings.Add(info.Id.MatchLength == c.Info.Id.MatchLength
+                    ? $"This image also matches {info.Id.XmlId} ({Path.GetFileName(doc.Path)}), equally specifically; {c.Info.Id.XmlId} was used because it comes first in the definition list. Check it is the right one."
+                    : $"This image also matches {info.Id.XmlId} ({Path.GetFileName(doc.Path)}); {c.Info.Id.XmlId} was used because its ID is more specific.");
+            }
             AddRom(rom);
             AppSettings.Current.AddRecentFile(path);
             UpdateRecentMenu();
@@ -681,7 +691,7 @@ public sealed class MainForm : Form
             path = dialog.FileName;
         }
 
-        var temp = path + ".tmp";
+        var temp = $"{path}.{Guid.NewGuid():N}.tmp";
         try
         {
             var bytes = rom.PrepareForSave(out int checksums);
@@ -692,9 +702,14 @@ public sealed class MainForm : Form
             {
                 return false;
             }
-            // Write to a temporary file first so a failed write can't truncate the image.
-            File.WriteAllBytes(temp, bytes);
-            File.Move(temp, path, overwrite: true);
+            // Write a temporary file next to the image, flushed to disk, then swap it in: a failed
+            // write, a full disk or a power cut can't leave a truncated or half-written image.
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
+            ReplaceFile(temp, path);
             rom.FilePath = path;
             rom.IsDirty = false;
             AppSettings.Current.AddRecentFile(path);
@@ -717,6 +732,26 @@ public sealed class MainForm : Form
             }
             MessageBox.Show(this, ex.Message, "Save Image", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return false;
+        }
+    }
+
+    /// <summary>Moves <paramref name="source"/> over <paramref name="destination"/> in one step.</summary>
+    private static void ReplaceFile(string source, string destination)
+    {
+        if (!File.Exists(destination))
+        {
+            File.Move(source, destination);
+            return;
+        }
+        try
+        {
+            // Atomic, and keeps the image's attributes and permissions.
+            File.Replace(source, destination, destinationBackupFileName: null);
+        }
+        catch (IOException)
+        {
+            // Some file systems (e.g. network shares) can't replace; a move still never truncates.
+            File.Move(source, destination, overwrite: true);
         }
     }
 
@@ -1130,12 +1165,9 @@ public sealed class MainForm : Form
         var a = OpenTable(left);
         var b = OpenTable(right);
         a.SetCompare(right);
-        if (_mdiClient != null)
-        {
-            var area = _mdiClient.ClientSize;
-            a.Location = new Point(0, 0);
-            b.Location = new Point(Math.Min(a.Width + 4, Math.Max(0, area.Width - b.Width)), 0);
-        }
+        var area = _mdiClient.ClientSize;
+        a.Location = new Point(0, 0);
+        b.Location = new Point(Math.Min(a.Width + 4, Math.Max(0, area.Width - b.Width)), 0);
         a.Activate();
     }
 }

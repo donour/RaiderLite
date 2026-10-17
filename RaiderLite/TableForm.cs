@@ -1,4 +1,6 @@
 using RaiderLite.Core.Model;
+using RaiderLite.Core.Plotting;
+using RaiderLite.Plotting;
 
 namespace RaiderLite;
 
@@ -10,7 +12,7 @@ public sealed class TableForm : Form
     private readonly ScalarEditor? _scalar;
     // Child controls are positioned by LayoutContent rather than docked: see there for the rules.
     private const int ContentPadding = 4;
-    private readonly ContentPanel _content = new() { Dock = DockStyle.Fill, BackColor = SystemColors.Window };
+    private readonly ContentPanel _content;
     private readonly Label _titleLabel = new() { AutoSize = false, Height = 22, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(4, 0, 0, 0), AutoEllipsis = true };
     private readonly Label _xLabel = new() { AutoSize = false, Height = 18, TextAlign = ContentAlignment.MiddleCenter, AutoEllipsis = true };
     private readonly VerticalLabel _yLabel = new() { Width = 20 };
@@ -21,6 +23,13 @@ public sealed class TableForm : Form
     // One tooltip for the whole window, disposed with it. A ToolTip owns a native window that
     // keeps it (and every control it references) alive until it is disposed.
     private readonly ToolTip _tips = new() { AutoPopDelay = 30000 };
+
+    // Graph pane: below the grid for curves, to its right for maps. Created when first shown.
+    private const int GraphGap = 6;
+    private GraphPane? _graph;
+    private bool _graphVisible;
+    private Size? _sizeBeforeGraph;
+    private readonly ToolStripMenuItem _graphMenuItem = new("&Graph") { ShortcutKeyDisplayString = "Ctrl+G" };
     private readonly List<(ButtonBase Button, PresetEntry Entry)> _presetButtons = [];
     private readonly Label? _rawBytesLabel;
     private readonly ToolStripMenuItem _compareOff = new("&Off");
@@ -37,6 +46,9 @@ public sealed class TableForm : Form
     {
         _main = main;
         Table = table;
+        _content = new ContentPanel(LayoutContent);
+        // No layout passes while the window is being filled.
+        _content.SuspendLayout();
         Text = $"{table.Name} - {table.Rom?.FileName}";
         ShowIcon = false;
         KeyPreview = false;
@@ -70,7 +82,11 @@ public sealed class TableForm : Form
             _grid.Command += (_, c) => RunCommand(c);
             _grid.ValueEntryStarted += (_, ch) => _main.Toolbar.BeginValueEntry(ch);
             _grid.CurrentCellChanged += (_, _) => _main.UpdateCellStatus(this);
-            _grid.SelectionChanged += (_, _) => _main.UpdateCellStatus(this);
+            _grid.SelectionChanged += (_, _) =>
+            {
+                _main.UpdateCellStatus(this);
+                _graph?.Plot.RefreshSelection();
+            };
         }
         else
         {
@@ -88,7 +104,7 @@ public sealed class TableForm : Form
             _content.Controls.Add(_grid);
             _content.Controls.Add(_valueLabel);
         }
-        if (table.Presets is { Presets.Count: > 0 } || isSwitch)
+        if (table.Presets.Presets.Count > 0 || isSwitch)
         {
             BuildPresetPanel(isSwitch);
             _content.Controls.Add(_presetPanel);
@@ -97,7 +113,9 @@ public sealed class TableForm : Form
         // to read it, or see Table Properties.
         if (DescriptionTip(table) is { } tip)
             _tips.SetToolTip(_titleLabel, tip);
-        _content.LayoutContent = LayoutContent;
+        _content.ResumeLayout(false);
+        if (GraphAvailable && AppSettings.Current.ShowGraphsByDefault)
+            ShowGraph(true, resize: false);
 
         // Fill first, menu last: the menu docks above the content.
         Controls.Add(_content);
@@ -123,6 +141,11 @@ public sealed class TableForm : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
+        if (keyData == (Keys.Control | Keys.G) && GraphAvailable)
+        {
+            ToggleGraph();
+            return true;
+        }
         // Esc closes the table, unless it is cancelling a value being typed.
         if (keyData == Keys.Escape && !(_scalar?.IsEditing ?? false))
         {
@@ -196,6 +219,13 @@ public sealed class TableForm : Form
         _compareToOriginalValues.Click += (_, _) => SetCompareValueType(CompareValueType.Original);
 
         var viewMenu = new ToolStripMenuItem("&View");
+        _graphMenuItem.Click += (_, _) => ToggleGraph();
+        viewMenu.DropDownOpening += (_, _) =>
+        {
+            _graphMenuItem.Checked = _graphVisible;
+            _graphMenuItem.Enabled = GraphAvailable;
+        };
+        viewMenu.DropDownItems.Add(_graphMenuItem);
         viewMenu.DropDownItems.Add(new ToolStripMenuItem("&Fit Window to Table", null, (_, _) => ToggleFit()) { ShortcutKeyDisplayString = "double-click title" });
 
         if (Table is TableSwitch)
@@ -210,11 +240,11 @@ public sealed class TableForm : Form
     private void UpdateLabels()
     {
         var scale = Table.CurrentScale;
-        string units = scale == null || scale.IsRaw ? "raw" : scale.Unit;
+        string units = scale.IsRaw ? "raw" : scale.Unit;
         _titleLabel.Text = Table.Name;
         _titleLabel.Font = UiFonts.Bold;
         _valueLabel.Text = Table.CompareTable == null
-            ? $"Values: {units} ▾" + (Table.Locked ? "   (locked)" : "") + (Table.UserLevel > CoreSettings.Current.UserLevel ? $"   (requires user level {Table.UserLevel})" : "")
+            ? $"Values: {units} ▾" + (Table.ReadOnlyReason is { } readOnly ? $"   ({readOnly})" : "")
             : $"Comparing to {DescribeCompare()} - {(_grid?.CompareDisplay == CompareDisplay.Percent ? "percent" : "absolute")} difference";
 
         switch (Table)
@@ -232,7 +262,7 @@ public sealed class TableForm : Form
     private static string AxisCaption(Table1D axis)
     {
         var scale = axis.CurrentScale;
-        if (axis.IsStaticDataTable || scale == null)
+        if (axis.IsStaticDataTable)
             return axis.Name;
         string units = scale.IsRaw ? "raw" : scale.Unit;
         return (string.IsNullOrEmpty(axis.Name) ? units : $"{axis.Name} ({units})") + " ▾";
@@ -316,6 +346,8 @@ public sealed class TableForm : Form
             ? Math.Max(_grid.ContentSize.Width + (_yLabel.Parent != null ? _yLabel.Width : 0), presets.Width)
             : presets.Width;
         width = Math.Max(width + 2 * pad, Table is TableSwitch ? 320 : 240);
+        if (_graphVisible)
+            width = GraphBelowWhenFitted ? Math.Max(width, Px(480)) : width + GraphGap + Px(440);
         return Math.Max(width, (MainMenuStrip?.GetPreferredSize(Size.Empty).Width ?? 0) + 12);
     }
 
@@ -340,7 +372,104 @@ public sealed class TableForm : Form
         {
             height += presets.Height;
         }
+        if (_graphVisible)
+        {
+            int title = _titleLabel.Parent != null ? _titleLabel.Height : 0;
+            height = GraphBelowWhenFitted ? height + GraphGap + Px(260) : Math.Max(height, title + Px(320));
+        }
         return height + pad + (MainMenuStrip?.Height ?? 0);
+    }
+
+    private int Px(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
+
+    // ----- graph -----
+
+    /// <summary>Curves and maps have graphs; scalars and switches don't.</summary>
+    public bool GraphAvailable => _grid != null && GraphData.CanGraph(Table);
+
+    public bool GraphVisible => _graphVisible;
+
+    /// <summary>
+    /// Where the graph goes in a content area of <paramref name="w"/> × <paramref name="h"/>.
+    /// Curves are wide strips, so below. Maps go right or below, whichever gives the graph more
+    /// usable room; when neither gives enough, the graph goes right and the grid is limited to
+    /// part of the width (it scrolls, with its axes frozen) so the graph stays readable.
+    /// </summary>
+    private (bool Below, int GridMaxWidth) PlaceGraph(int w, int h)
+    {
+        if (Table is not Table3D || _grid == null)
+            return (true, int.MaxValue);
+        const int pad = ContentPadding;
+        var natural = _grid.ContentSize;
+        int title = _titleLabel.Parent != null ? _titleLabel.Height : 0;
+        int gridW = natural.Width + (_yLabel.Parent != null ? _yLabel.Width : 0) + 2 * pad;
+        int gridH = title + (_xLabel.Parent != null ? _xLabel.Height : 0) + natural.Height + _valueLabel.Height + pad;
+        int right = Math.Min(w - gridW - GraphGap, h - title - pad);
+        int below = Math.Min(w - 2 * pad, h - gridH - GraphGap);
+        if (Math.Max(right, below) >= Px(300))
+            return (below > right, int.MaxValue);
+        return (false, (int)(w * 0.55));
+    }
+
+    /// <summary>Placement used when fitting the window: decided by the space the editor area offers.</summary>
+    private bool GraphBelowWhenFitted
+    {
+        get
+        {
+            var area = _main.MdiClientArea;
+            int chrome = MainMenuStrip?.Height ?? 0;
+            return PlaceGraph(Math.Max(300, area.Width - 20), Math.Max(150, area.Height - 20) - chrome - 40).Below;
+        }
+    }
+
+    public void ToggleGraph() => ShowGraph(!_graphVisible, resize: true);
+
+    private void ShowGraph(bool show, bool resize)
+    {
+        if (show == _graphVisible || (show && !GraphAvailable))
+            return;
+        _graphVisible = show;
+        if (show && _graph == null)
+        {
+            _graph = new GraphPane(Table);
+            _graph.Plot.CellClicked += (_, cell) => SelectCell(cell);
+            _content.Controls.Add(_graph);
+        }
+        if (_graph != null)
+            _graph.Visible = show;
+
+        if (resize && WindowState == FormWindowState.Normal)
+        {
+            if (show)
+            {
+                // Grow the window enough for the graph; remember the size to return to.
+                _sizeBeforeGraph = ClientSize;
+                var max = _main.MdiClientArea;
+                int width = Math.Max(ClientSize.Width, Math.Min(NaturalClientWidth(), Math.Max(300, max.Width - 20)));
+                int height = Math.Max(ClientSize.Height, Math.Min(RequiredClientHeight(width), Math.Max(150, max.Height - 20)));
+                ClientSize = new Size(width, height);
+            }
+            else if (_sizeBeforeGraph is { } before)
+            {
+                ClientSize = before;
+            }
+            if (!show)
+                _sizeBeforeGraph = null;
+            KeepInView();
+        }
+        _content.PerformLayout();
+        if (_main.ActiveMdiChild == this)
+            _main.Toolbar.Bind(this);
+    }
+
+    /// <summary>Selects a cell in the grid (when its point is clicked in the graph).</summary>
+    private void SelectCell(DataCell cell)
+    {
+        if (_grid?.FindCell(cell) is not { } pos)
+            return;
+        _grid.ClearSelection();
+        _grid.CurrentCell = _grid.Rows[pos.Y].Cells[pos.X];
+        _grid.Focus();
     }
 
     /// <summary>The table's description wrapped for a tooltip, or null if it has none.</summary>
@@ -407,8 +536,14 @@ public sealed class TableForm : Form
                 int yw = hasY ? _yLabel.Width : 0;
                 int vh = _valueLabel.Height;
                 var natural = _grid.ContentSize;
-                int availW = Math.Max(40, w - pad - yw);
-                int availH = Math.Max(40, h - y - xh - vh - presetsPreferred - pad);
+                var graph = _graphVisible ? _graph : null;
+                var (below, gridMaxWidth) = graph != null ? PlaceGraph(w, h) : (true, int.MaxValue);
+                // The grid keeps priority, but leaves the graph a usable minimum.
+                int graphRight = graph != null && !below ? GraphGap + Px(260) : 0;
+                int graphBelow = graph != null && below ? GraphGap + Px(140) : 0;
+                int blockTop = y;
+                int availW = Math.Max(40, Math.Min(w - pad - yw - graphRight - (graphRight > 0 ? pad : 0), gridMaxWidth - pad - yw));
+                int availH = Math.Max(40, h - y - xh - vh - presetsPreferred - pad - graphBelow);
 
                 int gw = natural.Width, gh = natural.Height;
                 bool vScroll = gh > availH, hScroll = gw > availW;
@@ -430,12 +565,28 @@ public sealed class TableForm : Form
                     _yLabel.SetBounds(pad, y, yw, gh);
                 _grid.SetBounds(pad + yw, y, gw, gh);
                 y += gh;
-                _valueLabel.SetBounds(pad, y, inner, vh);
+                int blockWidth = graphRight > 0 ? yw + gw : inner;
+                _valueLabel.SetBounds(pad, y, blockWidth, vh);
                 y += vh;
                 if (presetsPreferred > 0)
                 {
-                    _presetPanel.SetBounds(pad, y, inner, presetsPreferred);
+                    _presetPanel.SetBounds(pad, y, blockWidth, presetsPreferred);
                     y += presetsPreferred;
+                }
+
+                if (graph != null)
+                {
+                    // The graph takes whatever space is left: graphs benefit from room, unlike the grid.
+                    if (below)
+                    {
+                        int gy = y + GraphGap;
+                        graph.SetBounds(pad, gy, inner, Math.Max(Px(60), h - gy - pad));
+                    }
+                    else
+                    {
+                        int gx = pad + yw + gw + GraphGap;
+                        graph.SetBounds(gx, blockTop, Math.Max(Px(120), w - gx - pad), Math.Max(Px(120), h - blockTop - pad));
+                    }
                 }
             }
             else if (_presetPanel.Parent != null)
@@ -455,14 +606,17 @@ public sealed class TableForm : Form
     /// <summary>A panel that leaves child placement to its owner instead of docking/anchoring.</summary>
     private sealed class ContentPanel : Panel
     {
-        public Action? LayoutContent;
+        private readonly Action _layout;
 
-        public ContentPanel()
+        public ContentPanel(Action layout)
         {
+            _layout = layout;
             DoubleBuffered = true;
+            Dock = DockStyle.Fill;
+            BackColor = SystemColors.Window;
         }
 
-        protected override void OnLayout(LayoutEventArgs levent) => LayoutContent?.Invoke();
+        protected override void OnLayout(LayoutEventArgs levent) => _layout();
     }
 
     private void BuildPresetPanel(bool isSwitch)
@@ -481,7 +635,7 @@ public sealed class TableForm : Form
         _presetPanel.Controls.Add(header);
 
         bool bitwise = Table is TableBitwiseSwitch;
-        foreach (var entry in Table.Presets?.Presets ?? [])
+        foreach (var entry in Table.Presets.Presets)
         {
             ButtonBase button = isSwitch && !bitwise
                 ? new RadioButton { AutoCheck = false }
@@ -554,6 +708,7 @@ public sealed class TableForm : Form
                 Table.RefreshCompare();
             _grid?.RefreshValues();
             _scalar?.RefreshValue();
+            _graph?.RefreshData();
             UpdatePresetButtons();
             _main.UpdateCellStatus(this);
         });
@@ -568,6 +723,7 @@ public sealed class TableForm : Form
                     return;
                 Table.RefreshCompare();
                 _grid?.RefreshValues();
+                _graph?.RefreshData();
             });
     }
 
@@ -577,6 +733,7 @@ public sealed class TableForm : Form
         _grid?.AutoSizeCells();
         _grid?.RefreshValues();
         _scalar?.RefreshValue();
+        _graph?.RefreshData();
         _content.PerformLayout();
         if (_main.ActiveMdiChild == this)
             _main.Toolbar.Bind(this);
@@ -738,7 +895,8 @@ public sealed class TableForm : Form
         }
         catch (UserLevelException ex)
         {
-            MessageBox.Show(this, $"{ex.Message}\nChange the user level in View > User Level.", "Table not modified",
+            var hint = ex.Level > CoreSettings.Current.UserLevel ? "\nChange the user level in View > User Level." : "";
+            MessageBox.Show(this, ex.Message + hint, "Table not modified",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
@@ -894,6 +1052,7 @@ public sealed class TableForm : Form
         UpdateLabels();
         _grid?.AutoSizeCells();
         _grid?.RefreshValues();
+        _graph?.RefreshData();
         if (_main.ActiveMdiChild == this)
             _main.Toolbar.Bind(this);
     }

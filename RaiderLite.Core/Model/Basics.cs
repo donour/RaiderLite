@@ -110,7 +110,8 @@ public sealed class CoreSettings
         set => _userLevel = Math.Clamp(value, 1, 5);
     }
 
-    /// <summary>Whether level-5 (debug) tables are written to the image.</summary>
+    /// <summary>Whether level-5 (debug) tables can be changed (edits go straight to the image, so
+    /// "not saved" means read-only).</summary>
     public bool SaveDebugTables { get; set; } = true;
 
     /// <summary>Preferred scaling category, selected when a table defines it.</summary>
@@ -120,8 +121,8 @@ public sealed class CoreSettings
     public bool ScaleHeadersAndData { get; set; } = true;
 }
 
-public sealed class UserLevelException(int level)
-    : Exception($"This table requires user level {level} to modify.")
+public sealed class UserLevelException(int level, string? message = null)
+    : Exception(message ?? $"This table requires user level {level} to modify.")
 {
     public int Level { get; } = level;
 }

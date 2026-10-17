@@ -95,8 +95,14 @@ public sealed class DefinitionDocument
         }
     }
 
-    /// <summary>The first rom whose own internal ID matches the image (RomRaider's search order).</summary>
-    public RomDefinitionInfo? FindMatch(byte[] image) => Roms.FirstOrDefault(r => r.Id.CheckMatch(image));
+    /// <summary>Every rom whose own internal ID matches the image, most specific (longest ID) first,
+    /// in file order otherwise.</summary>
+    public IEnumerable<RomDefinitionInfo> FindMatches(byte[] image) =>
+        Roms.Where(r => r.Id.CheckMatch(image)).OrderByDescending(r => r.Id.MatchLength);
+
+    /// <summary>The most specific rom whose internal ID matches the image; RomRaider takes the first
+    /// in file order, which picks the wrong one when one ID is a prefix of another.</summary>
+    public RomDefinitionInfo? FindMatch(byte[] image) => FindMatches(image).FirstOrDefault();
 
     public RomDefinitionInfo? FindByXmlId(string xmlId) =>
         Roms.FirstOrDefault(r => r.Id.XmlId.Equals(xmlId, StringComparison.OrdinalIgnoreCase));

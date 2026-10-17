@@ -225,9 +225,9 @@ public sealed class TableGrid : DataGridView
         {
             if (CompareDisplay == CompareDisplay.Percent)
                 return ValueFormatter.Format(cell.RealCompareChangeValue * 100, "0.0") + "%";
-            return ValueFormatter.Format(cell.RealCompareValue, scale?.Format);
+            return ValueFormatter.Format(cell.RealCompareValue, scale.Format);
         }
-        return ValueFormatter.Format(cell.RealValue, scale?.Format);
+        return ValueFormatter.Format(cell.RealValue, scale.Format);
     }
 
     protected override void OnCellValueNeeded(DataGridViewCellValueEventArgs e)
@@ -242,13 +242,13 @@ public sealed class TableGrid : DataGridView
         if (gc.Cell is { IsStatic: false } cell)
         {
             var scale = cell.Table.CurrentScale;
-            var tip = $"{ValueFormatter.Format(cell.RealValue, scale?.Format)} {scale?.Unit}\n" +
+            var tip = $"{ValueFormatter.Format(cell.RealValue, scale.Format)} {scale.Unit}\n" +
                       $"Raw: {cell.BinValue} (0x{(long)cell.BinValue & 0xFFFFFFFF:X})\n" +
                       $"Address: 0x{cell.Address:X}";
             if (cell.IsChanged)
-                tip += $"\nOriginal: {ValueFormatter.Format(scale?.ToReal(cell.OriginalValue) ?? cell.OriginalValue, scale?.Format)}";
+                tip += $"\nOriginal: {ValueFormatter.Format(scale.ToReal(cell.OriginalValue), scale.Format)}";
             if (_table.CompareTable != null)
-                tip += $"\nCompared: {ValueFormatter.Format(scale?.ToReal(cell.CompareToValue) ?? cell.CompareToValue, scale?.Format)}";
+                tip += $"\nCompared: {ValueFormatter.Format(scale.ToReal(cell.CompareToValue), scale.Format)}";
             e.ToolTipText = tip;
         }
         base.OnCellToolTipTextNeeded(e);
@@ -282,12 +282,30 @@ public sealed class TableGrid : DataGridView
         return ColorScaler.GetScaledColor(scale, settings.MinColor, settings.MaxColor);
     }
 
+    private bool _paintFailed;
+
     protected override void OnCellPainting(DataGridViewCellPaintingEventArgs e)
     {
         base.OnCellPainting(e);
-        if (e.RowIndex < 0 || e.ColumnIndex < 0 || e.Graphics == null)
+        if (_paintFailed || e.RowIndex < 0 || e.ColumnIndex < 0 || e.Graphics == null)
             return;
+        try
+        {
+            PaintCell(e, e.Graphics);
+        }
+        catch (Exception ex)
+        {
+            // Reporting from inside painting would repeat on every repaint: log once and
+            // fall back to the standard cell painting for the rest of this window's life.
+            ErrorReporter.Log(ex);
+            _paintFailed = true;
+            e.Handled = false;
+            Invalidate();
+        }
+    }
 
+    private void PaintCell(DataGridViewCellPaintingEventArgs e, Graphics graphics)
+    {
         var settings = AppSettings.Current;
         var gc = GetGridCell(e.RowIndex, e.ColumnIndex);
         var bounds = e.CellBounds;
@@ -295,11 +313,11 @@ public sealed class TableGrid : DataGridView
 
         var back = selected ? settings.HighlightColor : BackgroundFor(gc);
         using (var brush = new SolidBrush(back))
-            e.Graphics.FillRectangle(brush, bounds);
+            graphics.FillRectangle(brush, bounds);
 
         // Grid lines.
         using (var pen = new Pen(gc.Cell == null ? SystemColors.Control : Color.FromArgb(90, 90, 90)))
-            e.Graphics.DrawRectangle(pen, bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
+            graphics.DrawRectangle(pen, bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
 
         // Changed cells: red border when increased, blue when decreased (against the
         // original value, or the compared value when comparing).
@@ -312,7 +330,7 @@ public sealed class TableGrid : DataGridView
             if (border is { } b)
             {
                 using var pen = new Pen(b, 2);
-                e.Graphics.DrawRectangle(pen, bounds.X + 1, bounds.Y + 1, bounds.Width - 3, bounds.Height - 3);
+                graphics.DrawRectangle(pen, bounds.X + 1, bounds.Y + 1, bounds.Width - 3, bounds.Height - 3);
             }
         }
 
@@ -320,7 +338,7 @@ public sealed class TableGrid : DataGridView
         {
             var font = gc.Role == CellRole.Data && gc.Cell is { IsStatic: false } ? e.CellStyle?.Font ?? UiFonts.Regular : UiFonts.Bold;
             var fore = selected ? Color.White : ColorScaler.ContrastText(back);
-            TextRenderer.DrawText(e.Graphics, GetText(gc), font, bounds, fore,
+            TextRenderer.DrawText(graphics, GetText(gc), font, bounds, fore,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         }
 
@@ -328,7 +346,7 @@ public sealed class TableGrid : DataGridView
         if (Focused && CurrentCell != null && CurrentCell.RowIndex == e.RowIndex && CurrentCell.ColumnIndex == e.ColumnIndex)
         {
             using var pen = new Pen(Color.Black) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dot };
-            e.Graphics.DrawRectangle(pen, bounds.X + 2, bounds.Y + 2, bounds.Width - 5, bounds.Height - 5);
+            graphics.DrawRectangle(pen, bounds.X + 2, bounds.Y + 2, bounds.Width - 5, bounds.Height - 5);
         }
 
         e.Handled = true;

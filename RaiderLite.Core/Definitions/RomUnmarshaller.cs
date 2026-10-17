@@ -121,7 +121,7 @@ public sealed class RomUnmarshaller
                 var existing = name != null ? rom.GetTable(name) : null;
                 try
                 {
-                    var table = UnmarshalTable(n, existing, rom, topLevel: true);
+                    var table = UnmarshalTable(n, existing, rom);
                     if (table != null)
                         rom.AddTable(table);
                 }
@@ -237,21 +237,13 @@ public sealed class RomUnmarshaller
         }
     }
 
-    private Table? UnmarshalTable(XElement node, Table? table, Rom rom, bool topLevel)
+    /// <summary>
+    /// Finds or creates the table a top-level &lt;table&gt; element describes and applies the element
+    /// to it. Returns null when the table is skipped (no storage address anywhere in the chain).
+    /// </summary>
+    private Table? UnmarshalTable(XElement node, Table? table, Rom rom)
     {
-        if (Xml.Bool(Xml.Attr(node, "omit"), false))
-            throw new TableOmittedException();
-
-        var baseName = Xml.Attr(node, "base");
-        if (baseName != null && !baseName.Equals("none", StringComparison.OrdinalIgnoreCase))
-        {
-            var baseTable = rom.GetTable(baseName);
-            if (baseTable != null)
-                table = baseTable.Clone();
-            else
-                _warnings.Add($"{Xml.Attr(node, "name")}: base table \"{baseName}\" not found.");
-        }
-
+        table = BaseTable(node, rom) ?? table;
         if (table == null)
         {
             var tn = Xml.Attr(node, "name") ?? "unknown";
@@ -262,6 +254,42 @@ public sealed class RomUnmarshaller
             table = CreateTable(type, tn);
         }
 
+        ApplyTableNode(node, table, rom, topLevel: true);
+        return table;
+    }
+
+    /// <summary>
+    /// Throws <see cref="TableOmittedException"/> for omit="true"; returns a copy of the table
+    /// named by base="...", or null when there is none.
+    /// </summary>
+    private Table? BaseTable(XElement node, Rom rom)
+    {
+        if (Xml.Bool(Xml.Attr(node, "omit"), false))
+            throw new TableOmittedException();
+
+        var baseName = Xml.Attr(node, "base");
+        if (baseName == null || baseName.Equals("none", StringComparison.OrdinalIgnoreCase))
+            return null;
+        var baseTable = rom.GetTable(baseName);
+        if (baseTable == null)
+            _warnings.Add($"{Xml.Attr(node, "name")}: base table \"{baseName}\" not found.");
+        return baseTable?.Clone();
+    }
+
+    /// <summary>The axis an axis element applies to: <paramref name="axis"/>, or a copy of its base.</summary>
+    private Table1D AxisFor(XElement node, Table1D axis, Rom rom)
+    {
+        var baseTable = BaseTable(node, rom);
+        if (baseTable is Table1D baseAxis)
+            return baseAxis;
+        if (baseTable != null)
+            _warnings.Add($"{Xml.Attr(node, "name")}: base \"{baseTable.Name}\" is not a 1D table; ignored.");
+        return axis;
+    }
+
+    /// <summary>Applies a &lt;table&gt; element's attributes and children to an existing table or axis.</summary>
+    private void ApplyTableNode(XElement node, Table table, Rom rom, bool topLevel)
+    {
         var name = Xml.Attr(node, "name") ?? table.Name;
         table.Name = name;
 
@@ -334,20 +362,23 @@ public sealed class RomUnmarshaller
                 var axisKind = ParseAxisKind(Xml.Attr(n, "type"));
                 if (table is Table2D t2 && axisKind != AxisKind.None)
                 {
-                    var axis = (Table1D)UnmarshalTable(n, t2.Axis, rom, topLevel: false)!;
+                    var axis = AxisFor(n, t2.Axis, rom);
+                    ApplyTableNode(n, axis, rom, topLevel: false);
                     axis.AxisKind = axisKind;
                     axis.DataSize = t2.DataSize;
                     t2.Axis = axis;
                 }
                 else if (table is Table3D t3d && axisKind == AxisKind.X)
                 {
-                    var axis = (Table1D)UnmarshalTable(n, t3d.XAxis, rom, topLevel: false)!;
+                    var axis = AxisFor(n, t3d.XAxis, rom);
+                    ApplyTableNode(n, axis, rom, topLevel: false);
                     axis.DataSize = t3d.SizeX;
                     t3d.XAxis = axis;
                 }
                 else if (table is Table3D t3e && axisKind == AxisKind.Y)
                 {
-                    var axis = (Table1D)UnmarshalTable(n, t3e.YAxis, rom, topLevel: false)!;
+                    var axis = AxisFor(n, t3e.YAxis, rom);
+                    ApplyTableNode(n, axis, rom, topLevel: false);
                     axis.DataSize = t3e.SizeY;
                     t3e.YAxis = axis;
                 }
@@ -384,16 +415,15 @@ public sealed class RomUnmarshaller
             }
         }
 
-        return table;
     }
 
     private Scale UnmarshalScale(XElement node, Scale scale)
     {
-        var baseName = Xml.Attr(node, "base");
-        bool hasBase = baseName != null && !baseName.Equals("none", StringComparison.OrdinalIgnoreCase);
-        if (hasBase)
+        var baseName = Xml.Attr(node, "base") is { } b && !b.Equals("none", StringComparison.OrdinalIgnoreCase) ? b : null;
+        bool hasBase = baseName != null;
+        if (baseName != null)
         {
-            if (_scales.TryGetValue(baseName!.ToLowerInvariant(), out var baseScale))
+            if (_scales.TryGetValue(baseName.ToLowerInvariant(), out var baseScale))
                 scale = baseScale.Clone();
             else
                 _warnings.Add($"Scaling base \"{baseName}\" not found.");

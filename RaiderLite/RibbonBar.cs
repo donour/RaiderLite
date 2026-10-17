@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using RaiderLite.Core.Model;
 
@@ -25,9 +26,9 @@ public sealed class RibbonBar : Panel
     private static readonly Color LabelColor = Color.FromArgb(96, 100, 108);
 
     // Adjust group: compact segmented fields (created in BuildAdjustGroup, which knows the DPI).
-    private StepField _fineField = null!;
-    private StepField _coarseField = null!;
-    private StepField _valueField = null!;
+    private StepField _fineField;
+    private StepField _coarseField;
+    private StepField _valueField;
 
     private TextBox _fine => _fineField.Box;
     private TextBox _coarse => _coarseField.Box;
@@ -35,15 +36,16 @@ public sealed class RibbonBar : Panel
     private readonly ToolStripComboBox _scale = new() { DropDownStyle = ComboBoxStyle.DropDownList, ToolTipText = "Scaling of the table's values" };
     private readonly ToolStripComboBox _xScale = new() { DropDownStyle = ComboBoxStyle.DropDownList, ToolTipText = "Scaling of the X axis (the axis of a 2D table)" };
     private readonly ToolStripComboBox _yScale = new() { DropDownStyle = ComboBoxStyle.DropDownList, ToolTipText = "Scaling of the Y axis" };
-    private ToolStripLabel _xScaleLabel = null!;
-    private ToolStripLabel _yScaleLabel = null!;
+    private ToolStripLabel _xScaleLabel;
+    private ToolStripLabel _yScaleLabel;
 
     private readonly List<ToolStripItem> _romItems = [];
     private readonly List<ToolStripItem> _tableItems = [];
     private readonly List<ToolStripItem> _gridItems = [];
-    private ToolStripButton _undo = null!;
-    private ToolStripButton _redo = null!;
-    private ToolStripButton _showChanges = null!;
+    private ToolStripButton _undo;
+    private ToolStripButton _redo;
+    private ToolStripButton _showChanges;
+    private ToolStripButton _graph;
     private TableForm? _form;
     private bool _binding;
 
@@ -112,6 +114,7 @@ public sealed class RibbonBar : Panel
             Small("Properties", IconFont.Info, "Image properties and load warnings", () => _main.ShowRomProperties(_main.CurrentRom), _romItems)));
     }
 
+    [MemberNotNull(nameof(_undo), nameof(_redo))]
     private void BuildEditGroup()
     {
         var g = AddGroup("Edit");
@@ -129,6 +132,7 @@ public sealed class RibbonBar : Panel
                 ("Revert Whole Table", () => _form?.RunEdit("Revert table", t => t.UndoAll())))));
     }
 
+    [MemberNotNull(nameof(_fineField), nameof(_coarseField), nameof(_valueField))]
     private void BuildAdjustGroup()
     {
         var g = AddGroup("Adjust");
@@ -181,6 +185,7 @@ public sealed class RibbonBar : Panel
             Small("Horizontal", IconFont.Horizontal, "Interpolate along the rows of the selection (Shift+H)", () => Run(GridCommand.HorizontalInterpolate), _gridItems, Purple)));
     }
 
+    [MemberNotNull(nameof(_xScaleLabel), nameof(_yScaleLabel), nameof(_showChanges), nameof(_graph))]
     private void BuildViewGroup()
     {
         var g = AddGroup("View");
@@ -203,7 +208,9 @@ public sealed class RibbonBar : Panel
         g.Controls.Add(Rows(valuesRow, xRow, yRow));
 
         _showChanges = Small("Changes", IconFont.History, "Show differences from the original values instead of the values", () => _form?.ToggleShowChanges(), _gridItems);
+        _graph = Small("Graph", IconFont.Chart, "Show or hide the graph of this table (Ctrl+G)", () => _form?.ToggleGraph(), null);
         g.Controls.Add(Column(
+            _graph,
             _showChanges,
             Small("Select Data", IconFont.SelectAll, "Select every data cell (click the table's top-left corner, or Ctrl+A for everything)", () => _form?.Grid?.SelectAllData(), _gridItems)));
     }
@@ -342,9 +349,9 @@ public sealed class RibbonBar : Panel
 
     // ----- state -----
 
-    public double FineIncrement => ParseOr(_fine.Text, _form?.Table.CurrentScale?.FineIncrement ?? 1);
+    public double FineIncrement => ParseOr(_fine.Text, _form?.Table.CurrentScale.FineIncrement ?? 1);
 
-    public double CoarseIncrement => ParseOr(_coarse.Text, _form?.Table.CurrentScale?.CoarseIncrement ?? 1);
+    public double CoarseIncrement => ParseOr(_coarse.Text, _form?.Table.CurrentScale.CoarseIncrement ?? 1);
 
     public string ValueText => _value.Text;
 
@@ -373,8 +380,10 @@ public sealed class RibbonBar : Panel
             foreach (var item in _tableItems)
                 item.Enabled = editable;
             foreach (var item in _gridItems)
-                item.Enabled = editable && form!.Grid != null;
+                item.Enabled = editable && form?.Grid != null;
             _showChanges.Checked = form?.ShowingChanges == true;
+            _graph.Enabled = form?.GraphAvailable == true;
+            _graph.Checked = form?.GraphVisible == true;
 
             if (form == null || !editable)
             {
@@ -387,8 +396,8 @@ public sealed class RibbonBar : Panel
 
             var table = form.Table;
             var scale = table.CurrentScale;
-            _fine.Text = scale?.FineIncrement.ToString(CultureInfo.CurrentCulture) ?? "";
-            _coarse.Text = scale?.CoarseIncrement.ToString(CultureInfo.CurrentCulture) ?? "";
+            _fine.Text = scale.FineIncrement.ToString(CultureInfo.CurrentCulture) ?? "";
+            _coarse.Text = scale.CoarseIncrement.ToString(CultureInfo.CurrentCulture) ?? "";
             FillScales(_scale, table);
             _xScaleLabel.Text = table is Table3D ? "X axis" : "Axis";
             FillScales(_xScale, XAxis(form));

@@ -24,6 +24,11 @@ internal static class TestData
 
     public static string T6Def => Path.Combine(LotusDefs, "T6-V00BU_defs.xml");
 
+    /// <summary>Evora GT430: its definition has partly overlapping tables.</summary>
+    public static string EvoraGt430Def => Path.Combine(LotusDefs, "T6-EVORA--F430-V000E_defs.xml");
+
+    public static string EvoraGt430Calrom => Path.Combine(LotusRoot, @"custom_firmware\build\gt430-wideband-flexfuel\calrom.bin");
+
     public static string T6Calrom => Path.Combine(LotusRoot, @"custom_firmware\build\s1-race-tc\calrom.bin");
 
     /// <summary>Lotus .cpt calibration (raw region contents, no header).</summary>

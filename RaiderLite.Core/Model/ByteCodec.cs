@@ -35,10 +35,11 @@ public static class ByteCodec
             case StorageType.Movi20S:
             {
                 // The 20-bit immediate sits in the 3 bytes at address; RomRaider reads the
-                // 32-bit word that ends at address+2 and decodes it.
+                // 32-bit word that ends at address+2 and decodes it. MOVI20 is a (big-endian)
+                // SH-2A instruction, so the table's endian doesn't apply: read little-endian, the
+                // value would come partly from the byte before the cell, which no write could set.
                 CheckRange(input, address - 1, 4);
-                var span = input.AsSpan(address - 1, 4);
-                int word = little ? BinaryPrimitives.ReadInt32LittleEndian(span) : BinaryPrimitives.ReadInt32BigEndian(span);
+                int word = BinaryPrimitives.ReadInt32BigEndian(input.AsSpan(address - 1, 4));
                 return DecodeMovi20(word);
             }
             default:
@@ -53,6 +54,23 @@ public static class ByteCodec
         long value = ReadInteger(input, endian, address, storageType, signed) & (uint)mask;
         int shift = MaskUtil.FirstOneOfMask(mask);
         return shift < 0 ? 0 : value >> shift;
+    }
+
+    /// <summary>Whether the MOVI20 instruction at <paramref name="address"/> is the shifted form (MOVI20S).</summary>
+    public static bool IsMovi20S(byte[] input, int address) => (input[address] & 0x01) != 0;
+
+    /// <summary>
+    /// Writes the 20-bit immediate of the MOVI20/MOVI20S instruction at <paramref name="address"/>,
+    /// keeping its opcode bits: the instruction's own form (not the definition's storage type)
+    /// decides whether the value is shifted, exactly as when reading.
+    /// </summary>
+    public static void WriteMovi20(byte[] output, int address, int value)
+    {
+        CheckRange(output, address, 3);
+        int imm = IsMovi20S(output, address) ? value >> 8 : value;
+        output[address] = (byte)((((imm >> 16) & 0x0F) << 4) | (output[address] & 0x0F));
+        output[address + 1] = (byte)(imm >> 8);
+        output[address + 2] = (byte)imm;
     }
 
     private static int DecodeMovi20(int value)
