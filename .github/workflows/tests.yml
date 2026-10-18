@@ -1,5 +1,4 @@
 # Builds the solution (app, core and tests; the installer only builds in Release) and runs the tests.
-# Tests that need the Lotus definitions/images or the RomRaider sources skip themselves here.
 name: Tests
 
 on:

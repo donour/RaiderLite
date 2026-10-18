@@ -1,7 +1,5 @@
 using System.Text;
-using RaiderLite.Core.Definitions;
 using RaiderLite.Core.Model;
-using Xunit.Abstractions;
 
 namespace RaiderLite.Tests;
 
@@ -9,14 +7,11 @@ namespace RaiderLite.Tests;
 /// Axis rescaling: the new axis and data are stored exactly as planned, nothing else changes, it
 /// undoes as one step, and interpolated lookups of the rescaled table match the original.
 /// </summary>
-public class AxisRescaleTests(ITestOutputHelper output)
+public class AxisRescaleTests
 {
-    private readonly ITestOutputHelper _output = InitSettings(output);
-
-    private static ITestOutputHelper InitSettings(ITestOutputHelper output)
+    public AxisRescaleTests()
     {
         CoreSettings.Current = new CoreSettings();
-        return output;
     }
 
     private const string Xml = """
@@ -207,12 +202,6 @@ public class AxisRescaleTests(ITestOutputHelper output)
                 : oldRepeats ? oldValues[i] : RefLookup(oldAxis, oldValues, newAxis[i]);
         }
         return expected;
-    }
-
-    private static void UndoAll(Rom rom)
-    {
-        while (rom.History.CanUndo)
-            rom.History.Undo();
     }
 
     // ===== lookup and resampling maths =====
@@ -852,100 +841,6 @@ public class AxisRescaleTests(ITestOutputHelper output)
         var before = (byte[])rom.Binary.Clone();
         Assert.Throws<InvalidOperationException>(plan.Apply);
         Assert.Equal(before, rom.Binary);
-    }
-
-    // ===== every rescalable table of real images =====
-
-    [RequiresFilesFact(nameof(TestData.T4eDef), nameof(TestData.T4eBlackCalrom))]
-    public void RescalingEveryT4eTableIsExactAndUndoable() => RescaleEveryTable(TestData.T4eDef, TestData.T4eBlackCalrom);
-
-    [RequiresFilesFact(nameof(TestData.T6Def), nameof(TestData.T6Calrom))]
-    public void RescalingEveryT6TableIsExactAndUndoable() => RescaleEveryTable(TestData.T6Def, TestData.T6Calrom);
-
-    [RequiresFilesFact(nameof(TestData.EvoraGt430Def), nameof(TestData.EvoraGt430Calrom))]
-    public void RescalingEveryEvoraGt430TableIsExactAndUndoable() => RescaleEveryTable(TestData.EvoraGt430Def, TestData.EvoraGt430Calrom);
-
-    /// <summary>
-    /// Stretches every rescalable axis of a real image by a quarter of its span (less if the axis
-    /// can't store that), then checks the stored values against an independent lookup, that only
-    /// the table's bytes changed, that the reported change is the true one, and that undo restores
-    /// the image byte for byte. The image is only read; edits stay in memory.
-    /// </summary>
-    private void RescaleEveryTable(string defPath, string imagePath)
-    {
-        CoreSettings.Current = new CoreSettings { UserLevel = 5, SaveDebugTables = true };
-        var original = File.ReadAllBytes(imagePath);
-        var doc = DefinitionDocument.Load(defPath);
-        var info = doc.FindMatch(original)!;
-        var rom = RomUnmarshaller.Load(doc, info.Node, (byte[])original.Clone(), imagePath);
-
-        int rescaled = 0;
-        var skipped = new Dictionary<string, int>();
-        foreach (var table in rom.Tables.Where(t => t is Table2D or Table3D))
-        {
-            foreach (var axis in table.Axes)
-            {
-                if (AxisRescaler.CannotRescale(table, axis) is { } reason)
-                {
-                    skipped[reason] = skipped.GetValueOrDefault(reason) + 1;
-                    continue;
-                }
-                var real = Reals(axis.Cells);
-                double span = real[^1] - real[0];
-                var plan = new[] { 0.25, 0.1, 0.02 }
-                    .Select(f => AxisRescaler.Plan(table, axis, AxisRescaler.Stretch(real, real[^1] + f * span), BeyondRange.Hold))
-                    .FirstOrDefault(p => p.CanApply);
-                if (plan == null)
-                {
-                    skipped["axis can't store a wider range"] = skipped.GetValueOrDefault("axis can't store a wider range") + 1;
-                    continue;
-                }
-
-                string what = $"{table.Name} ({axis.AxisKind} axis)";
-                var before = (byte[])rom.Binary.Clone();
-                var oldAxis = Bins(axis.Cells);
-                var oldLines = AxisRescaler.Lines(table, axis).Select(Bins).ToArray();
-                plan.Apply();
-
-                var newAxis = Bins(axis.Cells);
-                Assert.Equal(plan.NewAxis, newAxis);
-                var lines = AxisRescaler.Lines(table, axis);
-                double lo = Math.Min(oldAxis[0], oldAxis[^1]), hi = Math.Max(oldAxis[0], oldAxis[^1]);
-                double worst = 0;
-                for (int j = 0; j < lines.Count; j++)
-                {
-                    var stored = Bins(lines[j]);
-                    Assert.Equal(plan.NewValues[j], stored);
-                    // Each value is the closest storable value to the old lookup at its breakpoint (held
-                    // at the edge beyond the old range, which the reference lookup clamps to).
-                    var expectedLine = ExpectedResample(oldAxis, oldLines[j], newAxis);
-                    for (int i = 0; i < stored.Length; i++)
-                    {
-                        double expected = lines[j][i].ClosestStorable(expectedLine[i]);
-                        Assert.True(expected == stored[i], $"{what}: line {j} value {i} is {stored[i]}, expected {expected}");
-                    }
-                    worst = Math.Max(worst, BruteForceMaxChange(oldAxis, oldLines[j], newAxis, stored, table.CurrentScale.ToReal));
-                }
-                Assert.True(Math.Abs(worst - Math.Abs(plan.MaxChange)) <= 1e-9 * Math.Max(1, worst), $"{what}: reported {plan.MaxChange}, measured {worst}");
-
-                var allowed = axis.Cells.Concat(table.DataCells)
-                    .SelectMany(c => Enumerable.Range(c.Address, StorageType.ByteLength(c.Table.StorageType))).ToHashSet();
-                for (int i = 0; i < before.Length; i++)
-                    Assert.True(before[i] == rom.Binary[i] || allowed.Contains(i), $"{what}: byte 0x{i:X} changed");
-
-                rom.History.Undo();
-                Assert.True(before.AsSpan().SequenceEqual(rom.Binary), $"{what}: undo didn't restore the image");
-                rescaled++;
-            }
-        }
-
-        _output.WriteLine($"{Path.GetFileName(defPath)}: rescaled {rescaled} axes");
-        foreach (var (reason, count) in skipped.OrderByDescending(kv => kv.Value))
-            _output.WriteLine($"  skipped {count}: {reason}");
-
-        UndoAll(rom);
-        Assert.Equal(original, rom.Binary);
-        Assert.True(rescaled >= 20, $"only {rescaled} axes could be rescaled");
     }
 
     // ===== helpers =====

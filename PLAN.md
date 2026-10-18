@@ -98,8 +98,8 @@ RaiderLite.slnx
 3. Checksums, compare, undo stack, properties dialogs, settings/definition manager. — done (first pass)
 
 ## Status / notes
-- `dotnet test` runs 218 tests. Tests using the Lotus files or RomRaider's test definitions skip
-  automatically if those paths don't exist (override with `RAIDERLITE_LOTUS_ROOT` / `RAIDERLITE_ROMRAIDER_ROOT`).
+- `dotnet test` runs 202 tests, all self-contained (inline definitions and synthetic images), so they
+  run the same locally and on GitHub Actions.
 - Settings live in `%APPDATA%\RaiderLite\settings.json`; `RAIDERLITE_SETTINGS` overrides the path.
 - Image paths passed on the command line (or dropped on the window) are opened.
 - Deliberate deviations from RomRaider (bug fixes): a `<scaling base=...>` without `to_byte` keeps the

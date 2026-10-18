@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using RaiderLite.Core.Expressions;
 
 namespace RaiderLite.Tests;
@@ -73,25 +72,5 @@ public class ExpressionTests
     {
         Assert.NotNull(ExpressionEngine.Validate(expr));
         Assert.True(double.IsNaN(ExpressionEngine.Evaluate(expr, 1)));
-    }
-
-    [RequiresFilesFact(nameof(TestData.LotusDefs))]
-    public void EveryExpressionInTheLotusDefinitionsParses()
-    {
-        var attr = new Regex("(?:expression|to_byte)=\"([^\"]*)\"");
-        var failures = new List<string>();
-        foreach (var file in Directory.GetFiles(TestData.LotusDefs, "*.xml"))
-        {
-            foreach (Match m in attr.Matches(File.ReadAllText(file)))
-            {
-                var expr = System.Net.WebUtility.HtmlDecode(m.Groups[1].Value);
-                // Known typo in T4E090_defs.xml ("inj: afr base" Lambda to_byte, missing '*').
-                if (expr == "((x14.6)-5)*20")
-                    continue;
-                if (ExpressionEngine.Validate(expr) is { } error)
-                    failures.Add($"{Path.GetFileName(file)}: {error}");
-            }
-        }
-        Assert.Empty(failures.Distinct());
     }
 }
