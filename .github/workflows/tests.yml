@@ -1,0 +1,25 @@
+# Builds the solution (app, core and tests; the installer only builds in Release) and runs the tests.
+# Tests that need the Lotus definitions/images or the RomRaider sources skip themselves here.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test RaiderLite.slnx -nologo --logger "console;verbosity=normal"
