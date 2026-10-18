@@ -1,0 +1,60 @@
+# Builds the WiX MSI installer when a version tag (v1.2.3 or v1.2.3.4) is pushed and attaches it to
+# the GitHub release for that tag, creating the release if needed. The version comes from the tag.
+# Running it by hand (Actions > Installer > Run workflow) builds the MSI as an artifact only.
+name: Installer
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      # Windows Installer versions are numeric (major.minor.build[.revision]); only the first three
+      # fields decide upgrades. Manual runs use the version in Directory.Build.props.
+      - name: Version from tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME is not a version like v1.2.3"
+            exit 1
+          fi
+          echo "VERSION_ARG=-p:Version=$version" >> "$GITHUB_ENV"
+
+      # Restores the WiX SDK from NuGet, publishes RaiderLite (Release, framework-dependent) and
+      # builds Installer\bin\Release\RaiderLite-<version>-x64.msi, running WiX's ICE validation.
+      - name: Build installer
+        shell: bash
+        run: dotnet build Installer -c Release -nologo $VERSION_ARG
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: RaiderLite-installer
+          path: Installer/bin/Release/*.msi
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          msi=$(ls Installer/bin/Release/*.msi)
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$msi" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$msi" --title "RaiderLite ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag
+          fi
