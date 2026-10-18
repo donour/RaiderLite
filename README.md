@@ -5,6 +5,8 @@ their tables using [RomRaider](https://github.com/RomRaider/RomRaider) XML defin
 your edits back to the image. It is a C#/.NET port of RomRaider's table editor: editing only, no
 logger.
 
+![RaiderLite with a Lotus T4e image open: the table tree, an ignition advance map and its 3D surface graph](screenshots/raiderlite.png)
+
 > **Warning:** changing an ECU calibration can damage an engine. Always keep an untouched copy of
 > the original image, and check every change before flashing it. RaiderLite comes with
 > **no warranty** (see [License](#license)).
