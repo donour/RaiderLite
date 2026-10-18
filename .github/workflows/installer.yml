@@ -46,6 +46,8 @@ jobs:
           path: Installer/bin/Release/*.msi
           if-no-files-found: error
 
+      # Attaches the MSI and a .sha256 file (sha256sum format) and puts the checksum at the top of the
+      # release notes, between markers so a rebuild of the same tag replaces it.
       - name: Attach to release
         if: github.ref_type == 'tag'
         shell: bash
@@ -53,8 +55,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           msi=$(ls Installer/bin/Release/*.msi)
+          name=$(basename "$msi")
+          sha=$(sha256sum "$msi" | cut -d' ' -f1)
+          echo "$sha  $name" > "$msi.sha256"
+          printf '<!-- checksums -->\n**SHA-256** of `%s`:\n```\n%s\n```\n<!-- /checksums -->\n' "$name" "$sha" > checksums.md
+
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$msi" --clobber
+            gh release upload "$GITHUB_REF_NAME" "$msi" "$msi.sha256" --clobber
+            gh release view "$GITHUB_REF_NAME" --json body --jq .body |
+              awk '/<!-- checksums -->/{skip=1} !skip{print} /<!-- \/checksums -->/{skip=0}' |
+              sed '/./,$!d' > previous.md
           else
-            gh release create "$GITHUB_REF_NAME" "$msi" --title "RaiderLite ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" --jq .body > previous.md
+          fi
+          { cat checksums.md; echo; cat previous.md; } > notes.md
+
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" "$msi" "$msi.sha256" --title "RaiderLite ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag
           fi
