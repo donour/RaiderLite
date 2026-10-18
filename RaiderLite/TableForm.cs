@@ -204,6 +204,7 @@ public sealed class TableForm : Form
         editMenu.DropDownItems.Add(new ToolStripMenuItem("&Interpolate", null, (_, _) => RunCommand(GridCommand.Interpolate)) { ShortcutKeyDisplayString = "Shift+I" });
         editMenu.DropDownItems.Add(new ToolStripMenuItem("&Vertical Interpolate", null, (_, _) => RunCommand(GridCommand.VerticalInterpolate)) { ShortcutKeyDisplayString = "Shift+V" });
         editMenu.DropDownItems.Add(new ToolStripMenuItem("&Horizontal Interpolate", null, (_, _) => RunCommand(GridCommand.HorizontalInterpolate)) { ShortcutKeyDisplayString = "Shift+H" });
+        editMenu.DropDownItems.Add(new ToolStripMenuItem("Rescale A&xis...", null, (_, _) => RescaleAxis()) { Enabled = CanRescaleAxis });
         editMenu.DropDownItems.Add(new ToolStripSeparator());
         editMenu.DropDownItems.Add(new ToolStripMenuItem("Select All &Data", null, (_, _) => _grid?.SelectAllData()));
 
@@ -943,6 +944,40 @@ public sealed class TableForm : Form
                 _main.Redo(Rom);
                 break;
         }
+    }
+
+    /// <summary>Whether the table has an axis stored in the image (curves and maps without label axes).</summary>
+    public bool CanRescaleAxis => Table is Table2D or Table3D && Table.Axes.Any(a => !a.IsStaticDataTable);
+
+    /// <summary>Rescales one axis and resamples the data along it (one undo step).</summary>
+    public void RescaleAxis()
+    {
+        if (!CanRescaleAxis)
+            return;
+        // Start with the axis the cursor is on, if any.
+        var initial = (_grid?.CurrentGridCell.Role, Table) switch
+        {
+            (CellRole.YAxis, Table3D t3) => t3.YAxis,
+            (_, Table3D t3) => t3.XAxis,
+            (_, Table2D t2) => t2.Axis,
+            _ => null,
+        };
+        using var dialog = new RescaleAxisForm(Table, initial);
+        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Plan is not { CanApply: true } plan)
+            return;
+        try
+        {
+            RunEdit("Rescale axis", _ => plan.Apply());
+        }
+        catch (InvalidOperationException ex)
+        {
+            MessageBox.Show(this, ex.Message, "Axis not rescaled", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var scale = Table.CurrentScale;
+        _main.SetStatus(plan.MaxChange == 0
+            ? $"Rescaled the axis of {Table.Name}; lookups within the old range are unchanged."
+            : $"Rescaled the axis of {Table.Name}; largest change within the old range {ValueFormatter.Format(Math.Abs(plan.MaxChange), scale.Format)} {(scale.IsRaw ? "" : scale.Unit)}".TrimEnd() + ".");
     }
 
     public void SetValue(string text)

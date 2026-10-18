@@ -98,7 +98,7 @@ RaiderLite.slnx
 3. Checksums, compare, undo stack, properties dialogs, settings/definition manager. — done (first pass)
 
 ## Status / notes
-- `dotnet test` runs 180 tests. Tests using the Lotus files or RomRaider's test definitions skip
+- `dotnet test` runs 218 tests. Tests using the Lotus files or RomRaider's test definitions skip
   automatically if those paths don't exist (override with `RAIDERLITE_LOTUS_ROOT` / `RAIDERLITE_ROMRAIDER_ROOT`).
 - Settings live in `%APPDATA%\RaiderLite\settings.json`; `RAIDERLITE_SETTINGS` overrides the path.
 - Image paths passed on the command line (or dropped on the window) are opened.
@@ -106,6 +106,13 @@ RaiderLite.slnx
   base's to_byte; the table-name address lookup isn't applied to axes; masked writes honour little-endian;
   the approximation search returns its best match; preset values handle 32-bit/signed data; an
   unparsable to_byte falls back to approximation instead of failing.
+- Rescale Axis (not in RomRaider; Edit menu of a table window, or Axis > Rescale on the ribbon):
+  new breakpoints for one axis of a curve or map (stretch from the first breakpoint, even spacing,
+  or typed), with the data resampled so ECU-style lookups (linear between breakpoints, clamped at
+  the ends) give the same values at every new breakpoint. Beyond the old range the edge values are
+  held (the ECU behaves as before) or the end slopes extrapolated. Repeated breakpoints (padding,
+  steps) are kept. The dialog previews the stored axis and the largest change of any lookup within
+  the old range; one undo step. Code: `RaiderLite.Core/Model/AxisRescaler.cs`.
 - Known definition defect: `T4E090_defs.xml`, table "inj: afr base", Lambda scaling has
   `to_byte="((x14.6)-5)*20"` (missing `*`). RaiderLite warns and approximates.
 

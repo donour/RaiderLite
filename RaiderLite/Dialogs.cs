@@ -29,6 +29,7 @@ public abstract class DialogBase : Form
         ok.Click += (_, e) => OnOk(e);
         ButtonPanel.Controls.Add(ok);
         AcceptButton = ok;
+        OkButton = ok;
         if (cancel)
         {
             var cancelButton = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(80, 0) };
@@ -41,6 +42,9 @@ public abstract class DialogBase : Form
         }
         Controls.Add(ButtonPanel);
     }
+
+    /// <summary>The OK (or Close) button.</summary>
+    protected Button OkButton { get; }
 
     protected virtual void OnOk(EventArgs e)
     {

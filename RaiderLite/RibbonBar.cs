@@ -46,6 +46,7 @@ public sealed class RibbonBar : Panel
     private ToolStripButton _redo;
     private ToolStripButton _showChanges;
     private ToolStripButton _graph;
+    private ToolStripButton _rescale;
     private TableForm? _form;
     private bool _binding;
 
@@ -64,6 +65,7 @@ public sealed class RibbonBar : Panel
         BuildEditGroup();
         BuildAdjustGroup();
         BuildInterpolateGroup();
+        BuildAxisGroup();
         BuildViewGroup();
         BuildToolsGroup();
 
@@ -183,6 +185,16 @@ public sealed class RibbonBar : Panel
             Small("Both", IconFont.Interpolate, "Interpolate the selection in both directions (Shift+I)", () => Run(GridCommand.Interpolate), _gridItems, Purple),
             Small("Vertical", IconFont.Vertical, "Interpolate down the columns of the selection (Shift+V)", () => Run(GridCommand.VerticalInterpolate), _gridItems, Purple),
             Small("Horizontal", IconFont.Horizontal, "Interpolate along the rows of the selection (Shift+H)", () => Run(GridCommand.HorizontalInterpolate), _gridItems, Purple)));
+    }
+
+    [MemberNotNull(nameof(_rescale))]
+    private void BuildAxisGroup()
+    {
+        var g = AddGroup("Axis");
+        var big = Strip(large: true);
+        _rescale = Large("Rescale", IconFont.Rescale, "Rescale an axis: new breakpoints, with the data resampled so lookups stay the same", () => _form?.RescaleAxis(), Purple);
+        big.Items.Add(_rescale);
+        g.Controls.Add(big);
     }
 
     [MemberNotNull(nameof(_xScaleLabel), nameof(_yScaleLabel), nameof(_showChanges), nameof(_graph))]
@@ -384,6 +396,7 @@ public sealed class RibbonBar : Panel
             _showChanges.Checked = form?.ShowingChanges == true;
             _graph.Enabled = form?.GraphAvailable == true;
             _graph.Checked = form?.GraphVisible == true;
+            _rescale.Enabled = form?.CanRescaleAxis == true;
 
             if (form == null || !editable)
             {

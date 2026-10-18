@@ -180,6 +180,35 @@ public sealed class Rom
         }
     }
 
+    /// <summary>
+    /// Other tables (shown in the tree; axes resolve to their table) with values in any of the
+    /// bytes of <paramref name="cells"/>: writing those cells changes them too.
+    /// </summary>
+    public IReadOnlyList<Table> TablesSharingBytes(IEnumerable<DataCell> cells)
+    {
+        var owners = new HashSet<Table>();
+        var others = new List<Table>();
+        var list = cells.Where(c => !c.IsStatic).ToList();
+        foreach (var cell in list)
+            owners.Add(cell.Table.TopLevel);
+        foreach (var cell in list)
+        {
+            int length = StorageType.ByteLength(cell.Table.StorageType);
+            for (int i = 0; i < length; i++)
+            {
+                if (!_cellsByByte.TryGetValue(cell.Address + i, out var sharing))
+                    continue;
+                foreach (var other in sharing)
+                {
+                    var top = other.Table.TopLevel;
+                    if (!owners.Contains(top) && _tablesByName.TryGetValue(top.Name, out var live) && ReferenceEquals(live, top) && !others.Contains(top))
+                        others.Add(top);
+                }
+            }
+        }
+        return others;
+    }
+
     /// <summary>Called after a cell wrote its bytes: keeps aliased cells in sync and notifies views.</summary>
     internal void OnCellWritten(DataCell cell, double oldValue, bool recordHistory = true)
     {

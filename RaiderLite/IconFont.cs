@@ -34,6 +34,7 @@ public static class IconFont
     public const char Sliders = '\uE9E9';
     public const char Chart = '\uE9F9';
     public const char Surface = '\uF158';
+    public const char Rescale = '\uE740';
 
     private static readonly string? FamilyName = FindFamily();
     private static readonly Dictionary<(char, int, int), Bitmap> Cache = [];

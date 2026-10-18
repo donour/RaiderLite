@@ -277,7 +277,7 @@ public sealed class DataCell
         if (Table.UserLevel >= 5 && !CoreSettings.Current.SaveDebugTables)
             throw new UserLevelException(Table.UserLevel, "Debug (level 5) tables are read-only while \"Save debug tables\" is off in Settings.");
 
-        double checkedValue = Representable(Math.Clamp(newBinValue, MinAllowedBin, MaxAllowedBin));
+        double checkedValue = ClosestStorable(newBinValue);
         if (BinValue == checkedValue)
             return;
 
@@ -286,6 +286,12 @@ public sealed class DataCell
         WriteToImage();
         _rom.OnCellWritten(this, old);
     }
+
+    /// <summary>
+    /// The raw value this cell would hold after <see cref="SetBinValue"/>: clamped to the storage
+    /// range and rounded to what the encoding stores. Lets edits be previewed exactly.
+    /// </summary>
+    public double ClosestStorable(double bin) => Representable(Math.Clamp(bin, MinAllowedBin, MaxAllowedBin));
 
     /// <summary>
     /// The nearest value the cell's encoding can store, so the value shown (and recorded for undo)
