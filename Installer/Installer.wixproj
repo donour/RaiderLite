@@ -1,0 +1,35 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+
+  <!--
+    Builds RaiderLite-<version>-x64.msi from a framework-dependent Release publish of the app.
+    Build it with: dotnet build Installer -c Release
+    The version comes from Directory.Build.props.
+  -->
+  <PropertyGroup>
+    <OutputName>RaiderLite-$(Version)-x64</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <RaiderLiteProject>$(MSBuildThisFileDirectory)..\RaiderLite\RaiderLite.csproj</RaiderLiteProject>
+    <RaiderLitePublishDir>$(MSBuildThisFileDirectory)obj\publish\</RaiderLitePublishDir>
+    <DefineConstants>PublishDir=$(RaiderLitePublishDir);ProductVersion=$(Version)</DefineConstants>
+    <!-- ICE61 flags MajorUpgrade AllowSameVersionUpgrades, which Package.wxs sets on purpose. -->
+    <SuppressIces>ICE61</SuppressIces>
+  </PropertyGroup>
+
+  <!--
+    Publish the app into a clean folder that Package.wxs harvests. Always a Release build, and the
+    folder is emptied first so files dropped from the app don't linger in the installer.
+
+    The MSI is always rebuilt too: WiX's up-to-date check compares against the previous build's
+    output file, so when the version (and with it the file name) changes it skips the build and
+    then fails to find the new MSI. Deleting its tracking file forces a fresh link.
+  -->
+  <Target Name="PublishRaiderLite" BeforeTargets="BeforeBuild">
+    <ItemGroup>
+      <_WixBindTracking Include="$(IntermediateOutputPath)$(MSBuildProjectFile).BindTracking*.txt" />
+    </ItemGroup>
+    <Delete Files="@(_WixBindTracking)" />
+    <RemoveDir Directories="$(RaiderLitePublishDir)" />
+    <Exec Command="dotnet publish &quot;$(RaiderLiteProject)&quot; -c Release -r win-x64 --self-contained false -p:Version=$(Version) -o &quot;$(RaiderLitePublishDir.TrimEnd('\'))&quot; -nologo" />
+  </Target>
+
+</Project>

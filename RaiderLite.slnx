@@ -1,4 +1,8 @@
 <Solution>
+  <Project Path="Installer/Installer.wixproj" Type="B7DD6F7E-DEF8-4E67-B5B7-07EF123DB6F0">
+    <!-- The installer (a Release publish plus the MSI) builds only in Release solution builds. -->
+    <Build Solution="Debug|*" Project="false" />
+  </Project>
   <Project Path="RaiderLite.Core/RaiderLite.Core.csproj" />
   <Project Path="RaiderLite.Tests/RaiderLite.Tests.csproj" />
   <Project Path="RaiderLite/RaiderLite.csproj" />

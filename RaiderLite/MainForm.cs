@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
+using System.Reflection;
 using RaiderLite.Core.Definitions;
 using RaiderLite.Core.Model;
 
@@ -216,9 +218,7 @@ public sealed class MainForm : Form
 
         var help = new ToolStripMenuItem("&Help");
         help.DropDownItems.Add(new ToolStripMenuItem("&Keyboard Shortcuts", null, (_, _) => ShowShortcuts()));
-        help.DropDownItems.Add(new ToolStripMenuItem("&About RaiderLite", null, (_, _) => MessageBox.Show(this,
-            "RaiderLite\n\nAn ECU map editor using RomRaider XML definitions.\nA C# port of RomRaider's table editor (editing only).",
-            "About RaiderLite", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+        help.DropDownItems.Add(new ToolStripMenuItem("&About RaiderLite", null, (_, _) => ShowAbout()));
 
         _menu.Items.AddRange([file, edit, view, tools, window, help]);
     }
@@ -286,6 +286,40 @@ public sealed class MainForm : Form
               Esc closes the active table window
             """;
         MessageBox.Show(this, text, "Keyboard Shortcuts", MessageBoxButtons.OK, MessageBoxIcon.None);
+    }
+
+    private void ShowAbout()
+    {
+        // Version and copyright come from Directory.Build.props via the generated assembly attributes.
+        var version = Application.ProductVersion.Split('+')[0];
+        var copyright = typeof(MainForm).Assembly.GetCustomAttribute<AssemblyCopyrightAttribute>()?.Copyright;
+        var page = new TaskDialogPage
+        {
+            Caption = "About RaiderLite",
+            Heading = $"RaiderLite {version}",
+            Icon = TaskDialogIcon.Information,
+            EnableLinks = true,
+            AllowCancel = true,
+            Text = $"""
+                {copyright}
+
+                An ECU map editor using RomRaider XML definitions: a C# port of RomRaider's table editor (editing only).
+
+                Thank you to the RomRaider developers and community, whose many years of work on RomRaider made this project possible.
+                <a href="https://www.romraider.com">www.romraider.com</a>   <a href="https://github.com/RomRaider/RomRaider">github.com/RomRaider/RomRaider</a>
+                RomRaider is Copyright © 2006-2025 RomRaider.com.
+                """,
+            Footnote = new TaskDialogFootnote(
+                "This program is free software, licensed under the GNU General Public License version 2. " +
+                "It comes with ABSOLUTELY NO WARRANTY. See LICENSE.txt in the installation folder for details."),
+            Buttons = { TaskDialogButton.OK },
+        };
+        page.LinkClicked += (_, e) =>
+        {
+            if (e.LinkHref.StartsWith("https://", StringComparison.Ordinal))
+                Process.Start(new ProcessStartInfo(e.LinkHref) { UseShellExecute = true });
+        };
+        TaskDialog.ShowDialog(this, page);
     }
 
     // ----- window state -----

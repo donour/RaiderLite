@@ -39,8 +39,10 @@ RaiderLite.slnx
 │   ├─ TableGrid        DataGridView subclass: heat-map colouring, changed-cell borders
 │   ├─ DefinitionManagerForm, SettingsForm, RomPropertiesForm, CompareForm
 │   └─ AppSettings      JSON settings in %APPDATA%\RaiderLite
-└─ RaiderLite.Tests/    xUnit: expressions, byte codec, definition parsing against the
-                        real Lotus defs, load/edit/save round-trips against the real bins
+├─ RaiderLite.Tests/    xUnit: expressions, byte codec, definition parsing against the
+│                       real Lotus defs, load/edit/save round-trips against the real bins
+├─ Installer/           WiX 6 MSI (Package.wxs) harvesting a framework-dependent Release publish
+└─ Directory.Build.props  product version shared by the app and the installer
 ```
 
 ## Behaviour to replicate (from the RomRaider source)
@@ -96,7 +98,7 @@ RaiderLite.slnx
 3. Checksums, compare, undo stack, properties dialogs, settings/definition manager. — done (first pass)
 
 ## Status / notes
-- `dotnet test` runs 130 tests. Tests using the Lotus files or RomRaider's test definitions skip
+- `dotnet test` runs 180 tests. Tests using the Lotus files or RomRaider's test definitions skip
   automatically if those paths don't exist (override with `RAIDERLITE_LOTUS_ROOT` / `RAIDERLITE_ROMRAIDER_ROOT`).
 - Settings live in `%APPDATA%\RaiderLite\settings.json`; `RAIDERLITE_SETTINGS` overrides the path.
 - Image paths passed on the command line (or dropped on the window) are opened.
@@ -107,9 +109,23 @@ RaiderLite.slnx
 - Known definition defect: `T4E090_defs.xml`, table "inj: afr base", Lambda scaling has
   `to_byte="((x14.6)-5)*20"` (missing `*`). RaiderLite warns and approximates.
 
+## Releasing
+1. Bump `<Version>` in `Directory.Build.props`. Windows Installer only compares the first three
+   fields, so change major, minor or patch.
+2. `dotnet build Installer -c Release` (or a Release build of the solution; Debug builds skip the
+   installer). Output: `Installer\bin\Release\RaiderLite-<version>-x64.msi`. Copy released MSIs
+   elsewhere: the next build deletes the previous one.
+
+The MSI installs per-machine to `Program Files\RaiderLite` with a Start menu shortcut and needs the
+.NET 10 Desktop Runtime (the app itself prompts with a download link if it is missing). Running a
+newer MSI upgrades in place: the old version is removed inside the same transaction, so a failure
+restores it. An older MSI refuses to install over a newer one; a rebuilt MSI with the same version
+replaces the installed one. Settings in `%APPDATA%\RaiderLite` are never touched. Never change the
+`UpgradeCode` in `Package.wxs`. No network updates, by design.
+
 ## Possible next steps
 - Table search by description, per-table "favourites".
 - Remember open tables per image; window positions.
 - XDF import (RomRaider's conversion layer) if ever needed.
 
-Out of scope: logger, dyno, RAM tune, 3D graph, XDF/VDF conversion layers, live data overlay, dataflow simulations.
+Out of scope: logger, dyno, RAM tune, XDF/VDF conversion layers, live data overlay, dataflow simulations.
