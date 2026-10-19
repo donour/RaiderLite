@@ -5,7 +5,7 @@ their tables using [RomRaider](https://github.com/RomRaider/RomRaider) XML defin
 your edits back to the image. It is a C#/.NET port of RomRaider's table editor: editing only, no
 logger.
 
-![RaiderLite with a Lotus T4e image open: the table tree, an ignition advance map and its 3D surface graph](screenshots/raiderlite.png)
+![RaiderLite with a Lotus T4e car's tune history: the Tunes panel with its revision timeline and notes, and a revision's AFR target map with its 3D surface graph](screenshots/raiderlite.png)
 
 > **Warning:** changing an ECU calibration can damage an engine. Always keep an untouched copy of
 > the original image, and check every change before flashing it. RaiderLite comes with
@@ -34,6 +34,14 @@ logger.
   E38 PCM, Subaru "Checksum Fix").
 - **Graphs:** optional read-only line graphs and 3D surfaces of curves and maps, GPU-accelerated
   with Direct2D (off by default; turn on in Settings or press Ctrl+G in a table).
+- **Tune history:** keep each car's calibrations as numbered revisions in a tune library folder,
+  each with its image, notes and other files (logs, flash files). The Tunes panel shows them as a
+  timeline with branches; each revision lists the tables changed from the one it was based on, and
+  revisions can be searched, compared, rejected (with a reason) or hidden. Revisions that others
+  are based on stay read-only, so the history can't be changed by accident. Start a car from its
+  stock image (**New Car**) or from any image you already have (**Import Image as New Car**). It is
+  all plain folders and a `car.json` index, readable without RaiderLite.
+- **Colours:** table colours are configurable, with a colour-blind friendly preset.
 
 Not included: data logging, dyno, live data and flashing. Use your usual tools to read and write
 the ECU.
@@ -70,6 +78,9 @@ The hash shown must match the one on the release page.
 3. Click a table to open it, click it again to close it. Select cells and type a value, or use the
    ribbon's Adjust and Interpolate commands. **Help > Keyboard Shortcuts** lists the keys.
 4. **Save** (Ctrl+S) or **Save As** writes the image, updating its checksums.
+5. To keep a history of a car's tunes, use **File > Import Image as New Car** (or **New Car** with the
+   stock image). The **Tunes** tab then lists its revisions: **New Revision** (Ctrl+Shift+N) copies
+   one to edit, with a label and notes. The library folder is set in **Edit > Settings**.
 
 ## Building from source
 
