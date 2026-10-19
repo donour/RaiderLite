@@ -219,7 +219,8 @@ public sealed class DefinitionManagerForm : DialogBase
         var side = new FlowLayoutPanel { Dock = DockStyle.Right, FlowDirection = FlowDirection.TopDown, AutoSize = true, Padding = new Padding(6) };
         Button Add(string text, EventHandler click)
         {
-            var b = new Button { Text = text, Width = 110 };
+            // Sized to the text (at least 110 wide): a fixed height clipped it at larger fonts and DPI.
+            var b = new Button { Text = text, AutoSize = true, MinimumSize = new Size(110, 0) };
             b.Click += click;
             side.Controls.Add(b);
             return b;
@@ -454,7 +455,7 @@ public sealed class SettingsForm : DialogBase
 
     private void AddColor(FlowLayoutPanel panel, string name, Color color)
     {
-        var button = new Button { Text = name, Width = 84, Height = 26, Margin = new Padding(2) };
+        var button = new Button { Text = name, AutoSize = true, MinimumSize = new Size(84, 26), Margin = new Padding(2) };
         button.Click += (_, _) =>
         {
             using var dialog = new ColorDialog { Color = button.BackColor, FullOpen = true };

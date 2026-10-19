@@ -44,6 +44,15 @@ public class TimelineLayoutTests
     }
 
     [Fact]
+    public void TheMainLineRunsToTheNewestRevisionNotTheLongestBranch()
+    {
+        // 1 forks into an old test chain 2-3-4 and the current line 5-6: the current line stays straight.
+        var rows = Build(null, N(0, null, 0), N(1, 0, 0), N(2, 1, 0), N(3, 2, 0), N(4, 3, 0), N(5, 1, 0), N(6, 5, 0));
+        Assert.Equal([0, 0, 0, 0], new[] { 0, 1, 5, 6 }.Select(n => Row(rows, n).Lane));
+        Assert.All(new[] { 2, 3, 4 }, n => Assert.Equal(1, Row(rows, n).Lane));
+    }
+
+    [Fact]
     public void TheLongerBranchIsTheMainLine()
     {
         // 1 forks into 2 -> 4 (longer) and 3.

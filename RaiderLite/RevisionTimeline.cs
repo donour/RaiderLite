@@ -215,7 +215,7 @@ internal sealed class RevisionTimeline : ListBox
         bool noChange = revision.Car.IsNoChange(revision);
         var numberFont = open ? UiFonts.Bold : UiFonts.Regular;
         int numberWidth = TextRenderer.MeasureText(g, "0000", UiFonts.Bold, Size.Empty, TextFormatFlags.NoPadding).Width;
-        int dateWidth = TextRenderer.MeasureText(g, "30 Sep 26", UiFonts.Regular, Size.Empty, TextFormatFlags.NoPadding).Width + Px(8);
+        int dateWidth = TextRenderer.MeasureText(g, "30 Mmm 88", UiFonts.Regular, Size.Empty, TextFormatFlags.NoPadding).Width + Px(8);
 
         var number = new Rectangle(area.Left, area.Top, numberWidth, area.Height);
         TextRenderer.DrawText(g, revision.Number.ToString("000", CultureInfo.InvariantCulture), numberFont, number, Muted, flags);

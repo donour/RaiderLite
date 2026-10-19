@@ -27,6 +27,8 @@ public sealed class Car
     };
 
     private readonly List<Revision> _revisions;
+    // Numbers aren't reused once a revision is deleted: the next one after every number given out.
+    private int _nextNumber;
 
     private Car(string folder, string name, string definition, List<Revision> revisions)
     {
@@ -78,7 +80,7 @@ public sealed class Car
             throw new NotSupportedException($"{path} was written by a newer version of RaiderLite (format {index.Format}).");
         var revisions = index.Revisions ?? [];
         Validate(path, revisions);
-        return new Car(folder, index.Name ?? Path.GetFileName(folder), index.Definition ?? "", revisions);
+        return new Car(folder, index.Name ?? Path.GetFileName(folder), index.Definition ?? "", revisions) { _nextNumber = index.NextNumber ?? 0 };
     }
 
     /// <summary>
@@ -104,9 +106,10 @@ public sealed class Car
     /// </summary>
     internal Revision AddRevision(Revision? parent, string label, DateTime created, byte[] image, string imageName)
     {
-        int number = _revisions.Count == 0 ? 0 : _revisions.Max(r => r.Number) + 1;
+        int number = NextNumber();
+        _nextNumber = number + 1;
         created = TruncateToSeconds(created);
-        label = CleanLabel(label);
+        label = TidyLabel(label);
         var folder = UniqueFolderName(FolderName(number, created, label));
         Directory.CreateDirectory(Path.Combine(Folder, folder));
         var revision = new Revision
@@ -171,7 +174,7 @@ public sealed class Car
     {
         CheckOwn(parent);
         var when = created ?? DateTime.Now;
-        int number = _revisions.Max(r => r.Number) + 1;
+        int number = NextNumber();
         var imageName = $"{when:yyyyMMdd}-{Slug(Name)}-{number:000}{Path.GetExtension(parent.Image)}";
         var revision = AddRevision(parent, label, when, File.ReadAllBytes(parent.ImagePath), imageName);
         Save();
@@ -201,7 +204,7 @@ public sealed class Car
     public void SetLabel(Revision revision, string label)
     {
         CheckOwn(revision);
-        revision.Label = CleanLabel(label);
+        revision.Label = TidyLabel(label);
         var wanted = FolderName(revision.Number, revision.Created, revision.Label);
         if (!string.Equals(wanted, revision.Folder, StringComparison.Ordinal))
         {
@@ -252,6 +255,30 @@ public sealed class Car
         revision.Hidden = hidden;
         Save();
     }
+
+    /// <summary>
+    /// Deletes a revision: <paramref name="removeFolder"/> removes its folder (the editor sends it
+    /// to the Recycle Bin; by default it is deleted), then the revisions based on it are based on
+    /// its parent instead. Stock can't be deleted, and its number isn't given out again. If removing
+    /// the folder fails, nothing changes. Returns the revisions that were re-based.
+    /// </summary>
+    public IReadOnlyList<Revision> DeleteRevision(Revision revision, Action<string>? removeFolder = null)
+    {
+        CheckOwn(revision);
+        if (revision.Number == 0)
+            throw new InvalidOperationException("Stock can't be deleted.");
+        var children = ChildrenOf(revision);
+        if (Directory.Exists(revision.FolderPath))
+            (removeFolder ?? (path => Directory.Delete(path, recursive: true)))(revision.FolderPath);
+        _nextNumber = NextNumber();
+        foreach (var child in children)
+            child.Parent = revision.Parent;
+        _revisions.Remove(revision);
+        Save();
+        return children;
+    }
+
+    private int NextNumber() => Math.Max(_revisions.Count == 0 ? 0 : _revisions.Max(r => r.Number) + 1, _nextNumber);
 
     // ----- the image -----
 
@@ -332,7 +359,15 @@ public sealed class Car
     /// <summary>Writes the index (atomically).</summary>
     public void Save()
     {
-        var index = new CarIndex { Format = FormatVersion, Name = Name, Definition = Definition, Revisions = _revisions };
+        var index = new CarIndex
+        {
+            Format = FormatVersion,
+            Name = Name,
+            Definition = Definition,
+            // Only needed once the highest number was deleted.
+            NextNumber = _nextNumber > (_revisions.Count == 0 ? 0 : _revisions.Max(r => r.Number) + 1) ? _nextNumber : null,
+            Revisions = _revisions,
+        };
         SafeFile.WriteAllText(IndexPath, JsonSerializer.Serialize(index, JsonOptions) + Environment.NewLine);
     }
 
@@ -349,6 +384,10 @@ public sealed class Car
             name += " " + clean;
         return name;
     }
+
+    /// <summary>A label as stored: trimmed, single spaces, one line. Only folder names need <see cref="CleanLabel"/>.</summary>
+    public static string TidyLabel(string label) =>
+        string.Join(' ', label.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>A label usable in a folder name: no path characters, single spaces, at most 60 characters.</summary>
     public static string CleanLabel(string label)
@@ -433,6 +472,7 @@ public sealed class Car
         public int Format { get; set; }
         public string? Name { get; set; }
         public string? Definition { get; set; }
+        public int? NextNumber { get; set; }
         public List<Revision>? Revisions { get; set; }
     }
 }

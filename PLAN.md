@@ -98,7 +98,7 @@ RaiderLite.slnx
 3. Checksums, compare, undo stack, properties dialogs, settings/definition manager. — done (first pass)
 
 ## Status / notes
-- `dotnet test` runs 267 tests, all self-contained (inline definitions and synthetic images), so they
+- `dotnet test` runs 280 tests, all self-contained (inline definitions and synthetic images), so they
   run the same locally and on GitHub Actions.
 - Settings live in `%APPDATA%\RaiderLite\settings.json`; `RAIDERLITE_SETTINGS` overrides the path.
 - Image paths passed on the command line (or dropped on the window) are opened.
@@ -113,6 +113,13 @@ RaiderLite.slnx
   held (the ECU behaves as before) or the end slopes extrapolated. Repeated breakpoints (padding,
   steps) are kept. The dialog previews the stored axis and the largest change of any lookup within
   the old range; one undo step. Code: `RaiderLite.Core/Model/AxisRescaler.cs`.
+- Window menu (replaces the stock MDI Cascade/Tile, which gave every window the same size):
+  each layout starts from every table's fitted size (`TableForm.FittedWindowSize`). Arrange
+  tries rows, side by side, stacked, grids, columns of stacked windows and "largest on the left",
+  and keeps the one showing the most of the tables; Tile Side by Side / Tile Stacked give each
+  table a column / row as wide / tall as it needs (shrunk in proportion when they don't fit);
+  Cascade offsets windows at their own sizes. Single-value windows keep their fixed size. Code:
+  `RaiderLite.Core/Layout/WindowArrangement.cs` (tested in `WindowArrangementTests`).
 - Known definition defect: `T4E090_defs.xml`, table "inj: afr base", Lambda scaling has
   `to_byte="((x14.6)-5)*20"` (missing `*`). RaiderLite warns and approximates.
 

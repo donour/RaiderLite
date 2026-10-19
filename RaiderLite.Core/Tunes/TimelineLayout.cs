@@ -26,9 +26,10 @@ public sealed record TimelineRow(
     TimelineFold? Fold = null);
 
 /// <summary>
-/// Lays out revisions as a git-style graph, newest first. The main line runs from the root
-/// through, at every fork, the child with the most descendants (the newest on a tie), and is drawn
-/// straight in lane 0; other children start side branches in further lanes, which are reused once
+/// Lays out revisions as a git-style graph, newest first. The main line runs from the root to the
+/// newest revision (at every fork, through the child whose branch holds the newest revision), so
+/// the line being worked on stays straight in lane 0 however long the old side branches are; other
+/// children start side branches in further lanes, which are reused once
 /// free. Side branches that are finished (nothing in them newer than <c>foldAfter</c>) fold, all
 /// those of one parent together, into one row.
 /// </summary>
@@ -65,8 +66,9 @@ public static class TimelineLayout
         foreach (var list in children.Values)
             list.Sort();
 
-        // Subtree sizes, iteratively (histories can be long) and safe against loops.
+        // Subtree sizes and newest members, iteratively (histories can be long) and safe against loops.
         var size = new Dictionary<int, int>();
+        var newest = new Dictionary<int, int>();
         foreach (var start in nodes.Select(n => n.Number))
         {
             var stack = new Stack<(int Node, bool Done)>();
@@ -80,6 +82,7 @@ public static class TimelineLayout
                 if (done)
                 {
                     size[node] = 1 + children[node].Sum(c => size.GetValueOrDefault(c));
+                    newest[node] = children[node].Select(c => newest.GetValueOrDefault(c, c)).Append(node).Max();
                     onPath.Remove(node);
                     continue;
                 }
@@ -91,13 +94,14 @@ public static class TimelineLayout
             }
         }
 
-        int Heaviest(List<int> options) => options.OrderByDescending(c => size[c]).ThenByDescending(c => c).First();
+        // Each branch follows the child leading to its newest revision.
+        int Next(List<int> options) => options.OrderByDescending(c => newest[c]).ThenByDescending(c => size[c]).First();
 
         var placed = new HashSet<int>();
         Branch MakeBranch(int first, int? parent)
         {
             var branch = new Branch { Chain = [], Parent = parent };
-            for (int? n = first; n is int k && placed.Add(k); n = children[k].Count > 0 ? Heaviest(children[k]) : null)
+            for (int? n = first; n is int k && placed.Add(k); n = children[k].Count > 0 ? Next(children[k]) : null)
                 branch.Chain.Add(k);
             foreach (var member in branch.Chain)
             {

@@ -167,8 +167,14 @@ public sealed class CarTests : IDisposable
         var car = NewCar();
         var r = car.NewRevision(car.Revisions[0], "maf", new DateTime(2026, 7, 12));
         car.WriteNotes(r, "note");
-        car.SetLabel(r, "MAF for 3.5\" intake");
+        car.SetLabel(r, "MAF  for 3.5\" intake ");
         Assert.Equal("001 2026-07-12 MAF for 3.5- intake", r.Folder);
+        // The label keeps what a folder name can't hold; only the folder is cleaned.
+        Assert.Equal("MAF for 3.5\" intake", r.Label);
+        Assert.Equal("MAF for 3.5\" intake", Car.Open(CarFolder).Get(1)!.Label);
+        var colon = car.NewRevision(r, "Stage 0: knock safe", new DateTime(2026, 7, 13));
+        Assert.Equal("Stage 0: knock safe", colon.Label);
+        Assert.Equal("002 2026-07-13 Stage 0- knock safe", colon.Folder);
         Assert.True(File.Exists(r.ImagePath));
         Assert.Equal("note", car.ReadNotes(r));
         Assert.Equal(r.Folder, Car.Open(CarFolder).Get(1)!.Folder);
@@ -176,6 +182,61 @@ public sealed class CarTests : IDisposable
         car.SetLabel(r, "maf for 3.5- INTAKE");   // case only
         Assert.Equal("001 2026-07-12 maf for 3.5- INTAKE", r.Folder);
         Assert.True(File.Exists(r.ImagePath));
+    }
+
+    [Fact]
+    public void DeletingARevisionRebasesItsChildren()
+    {
+        var car = NewCar();
+        var a = car.NewRevision(car.Revisions[0], "a");
+        var b = car.NewRevision(a, "b");
+        var c1 = car.NewRevision(b, "c1");
+        var c2 = car.NewRevision(b, "c2");
+        var folder = b.FolderPath;
+
+        var rebased = car.DeleteRevision(b);
+        Assert.Equal([c1, c2], rebased);
+        Assert.False(Directory.Exists(folder));
+        Assert.Null(car.Get(2));
+        Assert.Equal(1, c1.Parent);
+        Assert.Equal(1, c2.Parent);
+        var reopened = Car.Open(CarFolder);
+        Assert.Equal([0, 1, 3, 4], reopened.Revisions.Select(r => r.Number));
+        Assert.Equal(1, reopened.Get(3)!.Parent);
+        Assert.Throws<InvalidOperationException>(() => car.DeleteRevision(car.Revisions[0]));
+    }
+
+    [Fact]
+    public void DeletedNumbersArentReused()
+    {
+        var car = NewCar();
+        var a = car.NewRevision(car.Revisions[0], "a");
+        var b = car.NewRevision(a, "b");
+        car.DeleteRevision(b);
+        Assert.Equal(3, car.NewRevision(a, "c").Number);
+
+        // Also across reopening, when the deleted one had the highest number.
+        car.DeleteRevision(car.Get(3)!);
+        var reopened = Car.Open(CarFolder);
+        Assert.Equal(4, reopened.NewRevision(reopened.Get(1)!, "d").Number);
+    }
+
+    [Fact]
+    public void AFailedFolderRemovalChangesNothing()
+    {
+        var car = NewCar();
+        var a = car.NewRevision(car.Revisions[0], "a");
+        var b = car.NewRevision(a, "b");
+        Assert.Throws<IOException>(() => car.DeleteRevision(a, _ => throw new IOException("in use")));
+        Assert.NotNull(car.Get(1));
+        Assert.Equal(1, b.Parent);
+        Assert.True(Directory.Exists(a.FolderPath));
+        Assert.Equal([0, 1, 2], Car.Open(CarFolder).Revisions.Select(r => r.Number));
+
+        string? removed = null;
+        car.DeleteRevision(a, path => removed = path);
+        Assert.Equal(a.FolderPath, removed);
+        Assert.Equal(0, b.Parent);
     }
 
     [Fact]

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using RaiderLite.Core.Definitions;
+using RaiderLite.Core.Layout;
 using RaiderLite.Core.Model;
 using RaiderLite.Core.Tunes;
 
@@ -254,9 +255,14 @@ public sealed class MainForm : Form
         tools.DropDownItems.Add(new ToolStripMenuItem("&Compare Images...", null, (_, _) => ShowCompareImages()));
 
         var window = new ToolStripMenuItem("&Window");
-        window.DropDownItems.Add(new ToolStripMenuItem("&Cascade", null, (_, _) => LayoutMdi(MdiLayout.Cascade)));
-        window.DropDownItems.Add(new ToolStripMenuItem("Tile &Horizontally", null, (_, _) => LayoutMdi(MdiLayout.TileHorizontal)));
-        window.DropDownItems.Add(new ToolStripMenuItem("Tile &Vertically", null, (_, _) => LayoutMdi(MdiLayout.TileVertical)));
+        // Each layout starts from every table's fitted size, unlike the stock MDI layouts, which
+        // give every window the same size whatever its table.
+        window.DropDownItems.Add(new ToolStripMenuItem("&Arrange", null, (_, _) => ArrangeTables(WindowArrangement.Arrange)) { ToolTipText = "Each table at the size that shows it, packed into rows; shrunk evenly if they don't all fit" });
+        window.DropDownItems.Add(new ToolStripMenuItem("Tile &Side by Side", null, (_, _) => ArrangeTables(WindowArrangement.SideBySide)) { ToolTipText = "One column per table, as wide as it needs" });
+        window.DropDownItems.Add(new ToolStripMenuItem("Tile S&tacked", null, (_, _) => ArrangeTables(WindowArrangement.Stacked)) { ToolTipText = "One row per table, as tall as it needs" });
+        window.DropDownItems.Add(new ToolStripMenuItem("&Cascade", null, (_, _) => ArrangeTables((sizes, area, min) =>
+            WindowArrangement.Cascade(sizes, area, min, SystemInformation.CaptionHeight + LogicalToDeviceUnits(8)))));
+        window.DropDownItems.Add(new ToolStripSeparator());
         window.DropDownItems.Add(new ToolStripMenuItem("Close &All Tables", null, (_, _) => CloseAllTables()));
         window.DropDownItems.Add(new ToolStripSeparator());
         _menu.MdiWindowListItem = window;
@@ -909,6 +915,42 @@ public sealed class MainForm : Form
             if (_roms.Contains(rom))
                 return;
         }
+    }
+
+    /// <summary>
+    /// Lays out the open table windows (minimized ones stay minimized) from their fitted sizes.
+    /// Windows keep their stacking order, with the active one on top.
+    /// </summary>
+    private void ArrangeTables(Func<IReadOnlyList<Size>, Size, Size, IReadOnlyList<Rectangle>> layout)
+    {
+        var active = ActiveMdiChild;
+        var forms = MdiChildren.OfType<TableForm>().Where(f => f.Visible && f.WindowState != FormWindowState.Minimized).ToList();
+        if (forms.Count == 0)
+            return;
+        // The active window goes last, so cascading leaves it on top.
+        if (active is TableForm current && forms.Remove(current))
+            forms.Add(current);
+        var rects = layout(forms.Select(f => f.FittedWindowSize()).ToList(), _mdiClient.ClientSize, new Size(LogicalToDeviceUnits(240), LogicalToDeviceUnits(180)));
+        SuspendLayout();
+        try
+        {
+            for (int i = 0; i < forms.Count; i++)
+            {
+                var form = forms[i];
+                if (form.WindowState != FormWindowState.Normal)
+                    form.WindowState = FormWindowState.Normal;
+                if (form.FixedSize)
+                    form.Location = rects[i].Location;
+                else
+                    form.Bounds = rects[i];
+                form.BringToFront();
+            }
+        }
+        finally
+        {
+            ResumeLayout();
+        }
+        active?.Activate();
     }
 
     private void CloseAllTables()
@@ -1612,6 +1654,26 @@ public sealed class MainForm : Form
         ShowLeftPanel(tunes: true);
         _tunesPanel.ReloadCars(select: folder);
         SetStatus($"Created {dialog.CarName} ({match.Info.Id.XmlId}) in {library}.");
+    }
+
+    /// <summary>Closes the open images of a revision, asking about unsaved changes; false if one stays open.</summary>
+    internal bool CloseRevisionImages(Revision revision)
+    {
+        foreach (var rom in _romRevisions.Where(kv => ReferenceEquals(kv.Value, revision)).Select(kv => kv.Key).ToList())
+        {
+            CloseRom(rom);
+            if (_roms.Contains(rom))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>Revisions were deleted or re-based: locks (a parent may have lost its last child) and names change.</summary>
+    internal void OnRevisionsChanged()
+    {
+        RefreshRevisionLocks();
+        foreach (var rom in _romRevisions.Keys.ToList())
+            UpdateRomNode(rom);
     }
 
     /// <summary>Shows the current image's revision in the Tunes panel.</summary>

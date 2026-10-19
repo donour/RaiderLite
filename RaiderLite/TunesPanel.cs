@@ -107,6 +107,14 @@ internal sealed class TunesPanel : UserControl
             if (e.Button == MouseButtons.Right)
                 ShowMenu(_timeline, e.Location);
         };
+        _timeline.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Delete && _timeline.SelectedTimelineItems.Any(i => i.Revision != null))
+            {
+                DeleteRevisions(_timeline.SelectedTimelineItems.Where(i => i.Revision != null).Select(i => i.Revision!).ToList());
+                e.Handled = e.SuppressKeyPress = true;
+            }
+        };
 
         _details.OpenRequested += async (_, r) => await _main.OpenRevisionAsync(r, showTables: true);
         _details.ExpandRequested += (_, item) => Expand(item);
@@ -428,6 +436,17 @@ internal sealed class TunesPanel : UserControl
             menu.Items.Add("&Copy Changelog", null, (_, _) => CopyChangelog(r));
             menu.Items.Add("Add &Files...", null, (_, _) => ChooseFiles(r));
             menu.Items.Add("Show in &Explorer", null, (_, _) => ShowInExplorer(File.Exists(r.ImagePath) ? r.ImagePath : r.FolderPath));
+            if (r.Number != 0)
+            {
+                menu.Items.Add(new ToolStripSeparator());
+                menu.Items.Add("&Delete...", null, (_, _) => DeleteRevisions([r]));
+            }
+            menu.Items.Add(new ToolStripSeparator());
+        }
+        else if (anchor == _timeline && selected.Count > 1 && selected.All(i => i.Revision != null) && selected.Any(i => i.Revision!.Number != 0))
+        {
+            var revisions = selected.Select(i => i.Revision!).ToList();
+            menu.Items.Add($"&Delete {revisions.Count(r => r.Number != 0)} Revisions...", null, (_, _) => DeleteRevisions(revisions));
             menu.Items.Add(new ToolStripSeparator());
         }
         else if (anchor == _timeline && selected.Count == 1 && selected[0].IsFold)
@@ -495,6 +514,76 @@ internal sealed class TunesPanel : UserControl
         // Hidden or rejected out of the timeline: select the revision it was based on instead.
         if (_timeline.SelectedItems.Count == 0 && revision.Parent is int parent)
             RebuildTimeline(select: [parent]);
+    }
+
+    /// <summary>
+    /// Deletes revisions after confirming: their folders go to the Recycle Bin and the revisions
+    /// based on them are based on the nearest surviving ancestor instead. Stock is never deleted.
+    /// </summary>
+    private void DeleteRevisions(IEnumerable<Revision> selection)
+    {
+        // Newest first, so a deleted revision's children are re-based before it goes.
+        var revisions = selection.Where(r => r.Number != 0).OrderByDescending(r => r.Number).ToList();
+        if (revisions.Count == 0)
+            return;
+        CommitEdits();
+        var car = revisions[0].Car;
+        var deleted = revisions.ToHashSet();
+        Revision? Survivor(Revision r)
+        {
+            var p = car.ParentOf(r);
+            while (p != null && deleted.Contains(p))
+                p = car.ParentOf(p);
+            return p;
+        }
+        var rebased = car.Revisions.Where(r => !deleted.Contains(r) && car.ParentOf(r) is { } p && deleted.Contains(p)).ToList();
+        int files = revisions.Sum(r => car.Attachments(r).Count);
+
+        var text = (revisions.Count == 1 ? "Its folder" : "Their folders") + " (image, notes" +
+                   (files > 0 ? $" and {files} other file{(files == 1 ? "" : "s")}" : "") + ") will go to the Recycle Bin.";
+        if (revisions.Count > 1)
+            text = string.Join("\n", revisions.OrderBy(r => r.Number).Select(r => r.ToString())) + "\n\n" + text;
+        if (rebased.Count > 0)
+            text += "\n\n" + string.Join("\n", rebased.Select(r => $"{r.Number:000} will be based on {Survivor(r)?.ToString() ?? "nothing"} instead."));
+        var delete = new TaskDialogButton("&Delete");
+        var cancel = TaskDialogButton.Cancel;
+        var page = new TaskDialogPage
+        {
+            Caption = "Delete Revision",
+            Heading = revisions.Count == 1 ? $"Delete {revisions[0]}?" : $"Delete {revisions.Count} revisions?",
+            Text = text,
+            Icon = TaskDialogIcon.Warning,
+            AllowCancel = true,
+            Buttons = { delete, cancel },
+            DefaultButton = cancel,
+        };
+        if (TaskDialog.ShowDialog(this, page) != delete)
+            return;
+
+        var select = Survivor(revisions[^1]);
+        int done = 0;
+        foreach (var revision in revisions)
+        {
+            if (!_main.CloseRevisionImages(revision))
+                break;
+            try
+            {
+                car.DeleteRevision(revision, path =>
+                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(path,
+                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin));
+                _notes.Remove(revision.Number);
+                done++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+            {
+                MessageBox.Show(this, $"{revision} couldn't be deleted:\n\n{ex.Message}", "Delete Revision", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                break;
+            }
+        }
+        _main.OnRevisionsChanged();
+        RebuildTimeline(select: select != null ? [select.Number] : []);
+        _ = RefreshChangesAsync();
+        _main.SetStatus(done == 1 ? $"Deleted {revisions[0]} (its folder is in the Recycle Bin)." : $"Deleted {done} revisions (their folders are in the Recycle Bin).");
     }
 
     private void Rename(Revision revision)
@@ -602,7 +691,11 @@ internal sealed class RevisionDetails : UserControl
     private static readonly Color Muted = Color.FromArgb(96, 100, 108);
     private static readonly Color Warning = Color.FromArgb(176, 88, 0);
 
-    private readonly TableLayoutPanel _layout = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 9, Padding = new Padding(4, 4, 4, 2) };
+    // The sections in a scrolling pane: when even their smallest sizes don't fit, it scrolls
+    // rather than letting them draw over each other.
+    private readonly Panel _scroller = new() { Dock = DockStyle.Fill, AutoScroll = true };
+    private readonly TableLayoutPanel _layout = new() { Dock = DockStyle.Top, ColumnCount = 1, RowCount = 9, Padding = new Padding(4, 4, 4, 2), AutoSizeMode = AutoSizeMode.GrowAndShrink };
+    private bool _fitting;
     private readonly Label _title = new() { AutoSize = true, Font = UiFonts.Heading, UseMnemonic = false, Margin = new Padding(0, 0, 0, 2) };
     private readonly Label _meta = new() { AutoSize = true, ForeColor = Muted, UseMnemonic = false, Margin = new Padding(0, 0, 0, 6) };
     private readonly Label _notesCaption = Caption("Notes");
@@ -613,7 +706,8 @@ internal sealed class RevisionDetails : UserControl
     private readonly ListView _changes = List("Table", "Cells");
     private readonly Label _filesCaption = Caption("Files");
     private readonly ListView _files = List("File", "Size");
-    private readonly FlowLayoutPanel _buttons = new() { AutoSize = true, Dock = DockStyle.Fill, WrapContents = true, Margin = new Padding(0, 4, 0, 0) };
+    private readonly FlowLayoutPanel _buttons = new() { AutoSize = true, Dock = DockStyle.Bottom, WrapContents = true, Padding = new Padding(2) };
+    private readonly ToolTip _metaTip = new();
     private readonly Button _open = new() { Text = "&Open", AutoSize = true };
     private readonly Button _explorer = new() { Text = "Show in E&xplorer", AutoSize = true };
     private readonly Button _expand = new() { Text = "&Show Folded Revisions", AutoSize = true };
@@ -640,9 +734,11 @@ internal sealed class RevisionDetails : UserControl
         _layout.Controls.Add(_changes, 0, 5);
         _layout.Controls.Add(_filesCaption, 0, 6);
         _layout.Controls.Add(_files, 0, 7);
-        _layout.Controls.Add(_buttons, 0, 8);
         _buttons.Controls.AddRange([_open, _explorer, _expand]);
-        Controls.Add(_layout);
+        _scroller.Controls.Add(_layout);
+        // The buttons stay in view below the sections, which scroll when they don't fit.
+        Controls.Add(_scroller);
+        Controls.Add(_buttons);
 
         _notes.Leave += (_, _) => CommitNotes();
         _notes.TextChanged += (_, _) => UpdateHints();
@@ -706,6 +802,12 @@ internal sealed class RevisionDetails : UserControl
             FitLabels();
             FitRows();
         };
+        // A scrollbar coming or going changes the width the labels wrap in.
+        _scroller.ClientSizeChanged += (_, _) =>
+        {
+            FitLabels();
+            FitRows();
+        };
         ShowNothing("");
     }
 
@@ -747,7 +849,7 @@ internal sealed class RevisionDetails : UserControl
 
     private void FitLabels()
     {
-        int width = Math.Max(50, _layout.ClientSize.Width - _layout.Padding.Horizontal - 4);
+        int width = Math.Max(50, _scroller.ClientSize.Width - _layout.Padding.Horizontal - 4);
         _title.MaximumSize = new Size(width, 0);
         _meta.MaximumSize = new Size(width, 0);
         _changesCaption.MaximumSize = new Size(width, 0);
@@ -777,46 +879,78 @@ internal sealed class RevisionDetails : UserControl
     /// <summary>
     /// Sizes the section rows: each list as tall as its rows (a few at most, then it scrolls), the
     /// notes the rest but never under four lines; when that doesn't fit, the lists give way
-    /// (keeping three rows of changes and one of files). Without notes the changes list takes the rest.
+    /// (keeping three rows of changes and one of files). Without notes the changes list takes the
+    /// rest. When even those smallest sizes don't fit, the sections keep them and the pane scrolls.
     /// </summary>
     private void FitRows()
     {
         // While hidden the panel has no real size; it fits again when shown.
-        if (!IsHandleCreated || !Visible)
+        if (!IsHandleCreated || !Visible || _fitting)
             return;
-        var styles = _layout.RowStyles;
-        if (!_showNotes)
+        _fitting = true;
+        try
         {
-            styles[3] = new RowStyle(SizeType.Absolute, 0);
-            styles[5] = _showChangeList ? new RowStyle(SizeType.Percent, 100) : new RowStyle(SizeType.Absolute, 0);
-            styles[7] = new RowStyle(SizeType.Absolute, _showFileList ? ListHeight(_files, 4) : 0);
-            return;
-        }
-        // Measured at the panel's width: the labels wrap.
-        int width = Math.Max(50, _layout.ClientSize.Width - _layout.Padding.Horizontal);
-        var shown = new List<Control> { _title, _meta, _notesCaption, _buttons };
-        if (_showChanges)
-            shown.Add(_changesHeader);
-        if (_showFiles)
-            shown.Add(_filesCaption);
-        int fixedRows = shown.Sum(c => c.GetPreferredSize(new Size(width, 0)).Height + c.Margin.Vertical)
-            + _notes.Margin.Vertical + (_showChangeList ? _changes.Margin.Vertical : 0) + (_showFileList ? _files.Margin.Vertical : 0);
-        int available = _layout.ClientSize.Height - _layout.Padding.Vertical - fixedRows;
-        int notesMin = _notes.Font.Height * 4 + 8;
-        int changes = _showChangeList ? ListHeight(_changes, 8) : 0;
-        int files = _showFileList ? ListHeight(_files, 4) : 0;
-        int room = available - notesMin;
-        if (changes + files > room && changes + files > 0)
-        {
+            int viewport = _scroller.ClientSize.Height;
+            // Measured at the pane's width: the labels wrap.
+            int width = Math.Max(50, _scroller.ClientSize.Width - _layout.Padding.Horizontal);
+            var shown = new List<Control> { _title, _meta };
+            if (_showNotes)
+                shown.Add(_notesCaption);
+            if (_showChanges)
+                shown.Add(_changesHeader);
+            if (_showFiles)
+                shown.Add(_filesCaption);
+            int fixedRows = _layout.Padding.Vertical
+                + shown.Sum(c => c.GetPreferredSize(new Size(width, 0)).Height + c.Margin.Vertical)
+                + (_showNotes ? _notes.Margin.Vertical : 0)
+                + (_showChangeList ? _changes.Margin.Vertical : 0)
+                + (_showFileList ? _files.Margin.Vertical : 0);
+            int notesMin = _showNotes ? _notes.Font.Height * 4 + 8 : 0;
+            int changes = _showChangeList ? ListHeight(_changes, 8) : 0;
+            int files = _showFileList ? ListHeight(_files, 4) : 0;
             int minChanges = _showChangeList ? ListHeight(_changes, 3) : 0;
             int minFiles = _showFileList ? ListHeight(_files, 1) : 0;
-            double scale = Math.Max(0, room) / (double)(changes + files);
-            changes = Math.Max(minChanges, (int)(changes * scale));
-            files = Math.Max(minFiles, (int)(files * scale));
+            int room = viewport - fixedRows - notesMin;
+            bool fits = minChanges + minFiles <= room;
+            if (!fits)
+            {
+                changes = minChanges;
+                files = minFiles;
+            }
+            else if (changes + files > room)
+            {
+                double scale = room / (double)(changes + files);
+                changes = Math.Max(minChanges, (int)(changes * scale));
+                files = Math.Max(minFiles, (int)(files * scale));
+            }
+
+            // The spare height goes to the notes, else (comparing) to the changes list.
+            var styles = _layout.RowStyles;
+            if (_showNotes)
+            {
+                styles[3] = fits ? new RowStyle(SizeType.Percent, 100) : new RowStyle(SizeType.Absolute, notesMin);
+                styles[5] = new RowStyle(SizeType.Absolute, changes);
+            }
+            else
+            {
+                styles[3] = new RowStyle(SizeType.Absolute, 0);
+                styles[5] = fits && _showChangeList ? new RowStyle(SizeType.Percent, 100) : new RowStyle(SizeType.Absolute, changes);
+            }
+            styles[7] = new RowStyle(SizeType.Absolute, files);
+            if (fits)
+            {
+                _layout.AutoSize = false;
+                _layout.Height = viewport;
+            }
+            else
+            {
+                _layout.AutoSize = true;
+            }
         }
-        styles[3] = new RowStyle(SizeType.Percent, 100);
-        styles[5] = new RowStyle(SizeType.Absolute, changes);
-        styles[7] = new RowStyle(SizeType.Absolute, files);
+        finally
+        {
+            _fitting = false;
+        }
     }
 
     /// <summary>The height showing a list's rows, at least one and at most <paramref name="maxRows"/>.</summary>
@@ -860,6 +994,8 @@ internal sealed class RevisionDetails : UserControl
         var car = revision.Car;
         _title.Text = revision.ToString();
         _meta.Text = Describe(revision);
+        // Where an imported revision came from is there on demand; it would take two lines.
+        _metaTip.SetToolTip(_meta, revision.ImportedFrom != null ? $"Imported from {revision.ImportedFrom}" : "");
         _meta.ForeColor = car.CheckImage(revision) == ImageState.Ok ? Muted : Warning;
 
         var parent = car.ParentOf(revision);
@@ -1055,8 +1191,6 @@ internal sealed class RevisionDetails : UserControl
                 lines.Add("The image file is missing.");
                 break;
         }
-        if (r.ImportedFrom != null)
-            lines.Add($"Imported from {r.ImportedFrom}");
         return string.Join("\n", lines);
     }
 

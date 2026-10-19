@@ -323,15 +323,17 @@ public sealed class TableForm : Form
         KeepInView();
     }
 
-    private void FitClientSize()
+    private void FitClientSize() => ClientSize = FittedClientSize();
+
+    /// <summary>The client size that shows the whole table, within the MDI client area.</summary>
+    private Size FittedClientSize()
     {
         if (_scalar != null)
         {
             // Wide enough to read the table name in the caption.
             var caption = TextRenderer.MeasureText(Text, SystemFonts.SmallCaptionFont ?? Font).Width + 48;
             var content = _scalar.ContentSize;
-            ClientSize = new Size(Math.Min(Math.Max(content.Width, caption), 420), content.Height);
-            return;
+            return new Size(Math.Min(Math.Max(content.Width, caption), 420), content.Height);
         }
 
         var max = _main.MdiClientArea;
@@ -342,8 +344,14 @@ public sealed class TableForm : Form
         // If the height had to be limited the grid scrolls vertically: make room for that scrollbar.
         if (_grid != null && height < RequiredClientHeight(width))
             width = Math.Min(width + SystemInformation.VerticalScrollBarWidth, maxWidth);
-        ClientSize = new Size(width, height);
+        return new Size(width, height);
     }
+
+    /// <summary>The window size that shows the whole table (what fitting would give), without resizing.</summary>
+    public Size FittedWindowSize() => FittedClientSize() + (Size - ClientSize);
+
+    /// <summary>Single values have a fixed-size window: arranging moves it but keeps its size.</summary>
+    public bool FixedSize => _scalar != null;
 
     /// <summary>Client width that shows the whole table (and the menu bar) without scrolling.</summary>
     private int NaturalClientWidth()

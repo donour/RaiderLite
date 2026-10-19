@@ -208,9 +208,10 @@ the title bar and a breadcrumb show which revision is open.
 - **Newest first,** because current work is at the top. Each row shows the number, date, label
   and status icons: 🔒 locked, struck-through
   text for rejected.
-- **The main line is drawn straight.** It runs from stock to the newest revision through, at each
-  fork, the child with the most descendants. Side branches step one lane right, git-style, with
-  at most two or three lanes in practice.
+- **The main line is drawn straight.** It runs from stock to the newest revision: at each fork it
+  follows the child whose branch holds the newest revision, so the line being worked on stays
+  straight however long old test branches are. Side branches step one lane right, git-style,
+  with at most two or three lanes in practice.
 - **Finished side branches fold to one line** (`▸ 026–030 Rich test, inj angle ×4`). This applies
   when nothing in a branch is newer than a week. Click to expand.
 - **Hidden and rejected revisions** sit behind a "Show hidden" toggle in the ⋯ menu.
@@ -566,3 +567,20 @@ Smaller choices, with the default I'd use if you have no preference:
   - New Car from the empty state
   - Rename of an open revision, then saving it (to the renamed folder)
   - Copy Changelog, and Reject (hidden from the timeline, its parent selected)
+
+### Since phase 3
+
+- **Delete revisions:** a revision's context menu (Delete…), the Delete key, or several selected
+  at once. The confirmation lists the revisions, the folders going to the Recycle Bin, and which
+  revisions will be re-based on the nearest surviving ancestor. Open images of a deleted
+  revision are closed first, asking about unsaved changes. Stock can't be deleted.
+  - `Car.DeleteRevision` removes the folder through a callback (the app sends it to the Recycle
+    Bin), then re-bases the children. If removing the folder fails, nothing changes.
+  - Numbers aren't reused: `car.json` keeps `nextNumber` once the highest-numbered revision has
+    been deleted.
+- **Labels** are stored as typed ("Dyno: base"). Only the folder name is cleaned for the file
+  system.
+- **Main line:** it now runs to the newest revision, not the branch with the most revisions, so
+  deleting or adding revisions in a test branch doesn't move the current line aside.
+- **Details pane:** the sections scroll when even their smallest sizes don't fit, so they never
+  overlap; Open and Show in Explorer stay pinned below them; "Imported from" moved into a tooltip.
