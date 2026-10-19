@@ -384,13 +384,12 @@ internal sealed class TunesPanel : UserControl
 
     private string Tooltip(TimelineItem item)
     {
-        if (item.IsFold)
+        if (item.Revision is not { } r)
         {
             return $"{item.Members.Count} revisions in side branches that are finished:\n" +
                    string.Join("\n", item.Members.Take(12).Select(m => $"{m.Number:000}  {m.Label}")) +
                    (item.Members.Count > 12 ? "\n..." : "") + "\nDouble-click to show them.";
         }
-        var r = item.Revision!;
         var car = r.Car;
         var sb = new StringBuilder();
         sb.Append(r.Number.ToString("000", CultureInfo.InvariantCulture)).Append("  ").AppendLine(r.Label);
@@ -1051,12 +1050,12 @@ internal sealed class RevisionDetails : UserControl
         var changes = session.Compare(older, newer);
         if (changes == null)
             FillChanges(null, session.Problem ?? "Working out the changes...");
-        else if (changes.Problem != null)
-            FillChanges(null, changes.Problem);
-        else if (changes.Comparison!.Identical)
+        else if (changes.Comparison is not { } comparison)
+            FillChanges(null, changes.Problem ?? "The images can't be compared.");
+        else if (comparison.Identical)
             FillChanges(null, "The images are identical.");
         else
-            FillChanges(changes.Comparison, $"Differences from {older.Number:000}");
+            FillChanges(comparison, $"Differences from {older.Number:000}");
         Sections(notes: false, changes: true, files: false);
         _open.Visible = _explorer.Visible = _expand.Visible = false;
     }

@@ -153,12 +153,15 @@ internal sealed class RevisionTimeline : ListBox
         int iconSize = Px(16);
         int iconsWidth = iconSize + Px(6);
         var textArea = Rectangle.FromLTRB(textLeft, bounds.Top, bounds.Right - iconsWidth, bounds.Bottom);
-        if (item.IsFold)
-            DrawFold(g, item, textArea);
-        else
-            DrawRevision(g, item.Revision!, textArea);
         if (item.Revision is { } r)
+        {
+            DrawRevision(g, r, textArea);
             DrawIcons(g, r, Rectangle.FromLTRB(bounds.Right - iconsWidth, bounds.Top, bounds.Right - Px(4), bounds.Bottom), iconSize);
+        }
+        else
+        {
+            DrawFold(g, item, textArea);
+        }
         if ((e.State & DrawItemState.Focus) != 0 && Focused)
             ControlPaint.DrawFocusRectangle(g, bounds);
     }
@@ -168,7 +171,7 @@ internal sealed class RevisionTimeline : ListBox
         var color = LaneColors[item.Row.Lane % LaneColors.Length];
         float r = Px(4.5f);
         var circle = new RectangleF(x - r, y - r, 2 * r, 2 * r);
-        if (item.IsFold)
+        if (item.Revision is not { } revision)
         {
             // A folded branch: a small stack of nodes.
             using var brush = new SolidBrush(BackColor);
@@ -181,7 +184,6 @@ internal sealed class RevisionTimeline : ListBox
             g.DrawEllipse(pen, circle);
             return;
         }
-        var revision = item.Revision!;
         bool muted = revision.Hidden || revision.Rejected != null;
         bool noChange = revision.Car.IsNoChange(revision);
         using (var outline = new Pen(muted ? Muted : color, Math.Max(1.5f, Px(1.5f))))

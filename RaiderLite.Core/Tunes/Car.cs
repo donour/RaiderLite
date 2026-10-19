@@ -349,9 +349,10 @@ public sealed class Car
         var used = new HashSet<string>(_revisions.Select(r => r.Folder), StringComparer.OrdinalIgnoreCase);
         return Directory.EnumerateDirectories(Folder)
             .Select(Path.GetFileName)
-            .Where(n => n != null && !used.Contains(n))
+            .OfType<string>()
+            .Where(n => !used.Contains(n))
             .Order(StringComparer.OrdinalIgnoreCase)
-            .ToList()!;
+            .ToList();
     }
 
     // ----- saving -----
@@ -438,6 +439,9 @@ public sealed class Car
     /// <summary>Refuses indexes whose paths leave the car's folder, duplicate numbers or folders, or parent loops.</summary>
     private static void Validate(string path, List<Revision> revisions)
     {
+        // JSON null entries deserialize as null despite the element type.
+        if (revisions.Any(r => r is null))
+            throw new InvalidDataException($"{path} has an empty entry in its revision list.");
         static bool IsPlainName(string? name) =>
             !string.IsNullOrWhiteSpace(name) && name != "." && name != ".."
             && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 && !Path.IsPathRooted(name);

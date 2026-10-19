@@ -297,6 +297,7 @@ public sealed class CarTests : IDisposable
     [InlineData("""{ "format": 1, "revisions": [ { "number": 0, "folder": "a", "image": "..\\a.bin" } ] }""", typeof(InvalidDataException))]
     [InlineData("""{ "format": 1, "revisions": [ { "number": 0, "folder": "a", "image": "x" }, { "number": 0, "folder": "b", "image": "x" } ] }""", typeof(InvalidDataException))]
     [InlineData("""{ "format": 1, "revisions": [ { "number": 1, "folder": "a", "image": "x", "parent": 2 }, { "number": 2, "folder": "b", "image": "x", "parent": 1 } ] }""", typeof(InvalidDataException))]
+    [InlineData("""{ "format": 1, "revisions": [ null ] }""", typeof(InvalidDataException))]
     public void RefusesBadIndexes(string json, Type expected)
     {
         Directory.CreateDirectory(CarFolder);

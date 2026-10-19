@@ -96,6 +96,42 @@ public class WindowArrangementTests
     }
 
     [Fact]
+    public void ArrangeCopesWithAnAreaNarrowerThanTwoMinimumWidths()
+    {
+        // A small main window or a wide tree pane: the largest-on-the-left candidate used to ask
+        // Math.Clamp for a range whose minimum was above its maximum.
+        Size[] sizes = [new(500, 400), new(300, 200)];
+        var rects = WindowArrangement.Arrange(sizes, new Size(300, 700), Min);
+        Assert.Equal(2, rects.Count);
+    }
+
+    [Fact]
+    public void EveryLayoutPlacesEveryWindowWhateverTheSizes()
+    {
+        var random = new Random(1234);
+        int[] lengths = [1, 2, 50, 179, 180, 239, 240, 241, 300, 479, 480, 700, 1000, 3000];
+        for (int run = 0; run < 3000; run++)
+        {
+            var area = new Size(lengths[random.Next(lengths.Length)], lengths[random.Next(lengths.Length)]);
+            var sizes = Enumerable.Range(0, random.Next(1, 9))
+                .Select(_ => new Size(random.Next(1, 2500), random.Next(1, 2500))).ToList();
+            foreach (var (name, rects) in new[]
+            {
+                ("Arrange", WindowArrangement.Arrange(sizes, area, Min)),
+                ("SideBySide", WindowArrangement.SideBySide(sizes, area, Min)),
+                ("Stacked", WindowArrangement.Stacked(sizes, area, Min)),
+                ("Cascade", WindowArrangement.Cascade(sizes, area, Min, 30)),
+            })
+            {
+                Assert.True(rects.Count == sizes.Count, $"{name}: {rects.Count} rectangles for {sizes.Count} windows in {area}");
+                Assert.All(rects, r => Assert.True(r.Width >= 0 && r.Height >= 0, $"{name}: {r} in {area}"));
+                if (name == "Arrange" && area.Width >= Min.Width && area.Height >= Min.Height)
+                    AssertInsideAndApart(rects, area);
+            }
+        }
+    }
+
+    [Fact]
     public void NothingToArrange()
     {
         Assert.Empty(WindowArrangement.Arrange([], Area, Min));

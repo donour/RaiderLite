@@ -35,7 +35,8 @@ public static class WindowArrangement
             candidates.Add(Grid(sizes, area, columns));
             candidates.Add(Columns(sizes, area, minimum, columns));
         }
-        if (sizes.Count >= 2)
+        // It needs room for two columns of at least the minimum width.
+        if (sizes.Count >= 2 && area.Width >= 2 * minimum.Width)
             candidates.Add(MainAndStack(sizes, area, minimum));
         return candidates.MaxBy(c => Shown(sizes, c))!;
     }
@@ -75,11 +76,14 @@ public static class WindowArrangement
         return result;
     }
 
-    /// <summary>The largest window on the left, as wide as it needs (leaving a column), the others stacked beside it.</summary>
+    /// <summary>
+    /// The largest window on the left, as wide as it needs (leaving a column), the others stacked
+    /// beside it. The area must be at least two minimum widths wide.
+    /// </summary>
     private static IReadOnlyList<Rectangle> MainAndStack(IReadOnlyList<Size> sizes, Size area, Size minimum)
     {
         int main = Enumerable.Range(0, sizes.Count).MaxBy(i => sizes[i].Width * (long)sizes[i].Height);
-        int width = Math.Clamp(sizes[main].Width, Math.Min(minimum.Width, area.Width), Math.Max(1, area.Width - minimum.Width));
+        int width = Math.Clamp(sizes[main].Width, minimum.Width, area.Width - minimum.Width);
         var others = Enumerable.Range(0, sizes.Count).Where(i => i != main).ToList();
         var stacked = Stacked(others.Select(i => sizes[i]).ToList(), new Size(area.Width - width, area.Height), minimum);
         var result = new Rectangle[sizes.Count];

@@ -257,7 +257,7 @@ public sealed class MainForm : Form
         var window = new ToolStripMenuItem("&Window");
         // Each layout starts from every table's fitted size, unlike the stock MDI layouts, which
         // give every window the same size whatever its table.
-        window.DropDownItems.Add(new ToolStripMenuItem("&Arrange", null, (_, _) => ArrangeTables(WindowArrangement.Arrange)) { ToolTipText = "Each table at the size that shows it, packed into rows; shrunk evenly if they don't all fit" });
+        window.DropDownItems.Add(new ToolStripMenuItem("&Arrange", null, (_, _) => ArrangeTables(WindowArrangement.Arrange)) { ToolTipText = "Each table at the size that shows it, in whichever layout shows the most of the tables" });
         window.DropDownItems.Add(new ToolStripMenuItem("Tile &Side by Side", null, (_, _) => ArrangeTables(WindowArrangement.SideBySide)) { ToolTipText = "One column per table, as wide as it needs" });
         window.DropDownItems.Add(new ToolStripMenuItem("Tile S&tacked", null, (_, _) => ArrangeTables(WindowArrangement.Stacked)) { ToolTipText = "One row per table, as tall as it needs" });
         window.DropDownItems.Add(new ToolStripMenuItem("&Cascade", null, (_, _) => ArrangeTables((sizes, area, min) =>
@@ -925,12 +925,13 @@ public sealed class MainForm : Form
     {
         var active = ActiveMdiChild;
         var forms = MdiChildren.OfType<TableForm>().Where(f => f.Visible && f.WindowState != FormWindowState.Minimized).ToList();
-        if (forms.Count == 0)
+        var area = _mdiClient.ClientSize;
+        if (forms.Count == 0 || area.Width <= 0 || area.Height <= 0)
             return;
         // The active window goes last, so cascading leaves it on top.
         if (active is TableForm current && forms.Remove(current))
             forms.Add(current);
-        var rects = layout(forms.Select(f => f.FittedWindowSize()).ToList(), _mdiClient.ClientSize, new Size(LogicalToDeviceUnits(240), LogicalToDeviceUnits(180)));
+        var rects = layout(forms.Select(f => f.FittedWindowSize()).ToList(), area, new Size(LogicalToDeviceUnits(240), LogicalToDeviceUnits(180)));
         SuspendLayout();
         try
         {
@@ -1489,7 +1490,8 @@ public sealed class MainForm : Form
         var car = parent.Car;
         var parentRom = RomOf(parent);
 
-        byte[]? carried = null;
+        // The unsaved image of the parent and the rom it came from, when they go into the new revision.
+        (byte[] Image, Rom From)? carried = null;
         if (parentRom is { IsDirty: true })
         {
             var save = new TaskDialogButton($"&Save them in {parent.Number:000} first");
@@ -1514,7 +1516,7 @@ public sealed class MainForm : Form
             }
             else if (answer == carry)
             {
-                carried = (byte[])parentRom.PrepareForSave(out _).Clone();
+                carried = ((byte[])parentRom.PrepareForSave(out _).Clone(), parentRom);
             }
             else
             {
@@ -1526,11 +1528,11 @@ public sealed class MainForm : Form
         try
         {
             revision = car.NewRevision(parent, dialog.RevisionLabel);
-            if (carried != null)
+            if (carried is { } c)
             {
-                SafeFile.WriteAllBytes(revision.ImagePath, carried);
+                SafeFile.WriteAllBytes(revision.ImagePath, c.Image);
                 car.ImageSaved(revision);
-                SuggestNotes(revision, parentRom!);
+                SuggestNotes(revision, c.From);
             }
             if (dialog.Note.Length > 0)
                 car.WriteNotes(revision, dialog.Note + Environment.NewLine + car.ReadNotes(revision));
