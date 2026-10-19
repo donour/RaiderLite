@@ -86,13 +86,13 @@ public sealed class AppSettings
     public int CellWidth { get; set; } = 48;
     public int CellHeight { get; set; } = 20;
     public bool ColorAxis { get; set; }
-    public Color MaxColor { get; set; } = Color.FromArgb(255, 102, 102);
-    public Color MinColor { get; set; } = Color.FromArgb(153, 153, 255);
-    public Color HighlightColor { get; set; } = Color.FromArgb(27, 161, 226);
-    public Color IncreaseBorder { get; set; } = Color.FromArgb(255, 0, 0);
-    public Color DecreaseBorder { get; set; } = Color.FromArgb(0, 0, 255);
-    public Color AxisColor { get; set; } = Color.FromArgb(255, 255, 255);
-    public Color WarningColor { get; set; } = Color.FromArgb(255, 0, 0);
+    public Color MaxColor { get; set; } = ColorPreset.Default.Max;
+    public Color MinColor { get; set; } = ColorPreset.Default.Min;
+    public Color HighlightColor { get; set; } = ColorPreset.Default.Selection;
+    public Color IncreaseBorder { get; set; } = ColorPreset.Default.Increased;
+    public Color DecreaseBorder { get; set; } = ColorPreset.Default.Decreased;
+    public Color AxisColor { get; set; } = ColorPreset.Default.Axis;
+    public Color WarningColor { get; set; } = ColorPreset.Default.Warning;
 
     // Window state
     /// <summary>Table window bounds by "definition xmlid|table name", as "x,y,width,height".</summary>

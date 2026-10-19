@@ -319,8 +319,8 @@ public sealed class TableGrid : DataGridView
         using (var pen = new Pen(gc.Cell == null ? SystemColors.Control : Color.FromArgb(90, 90, 90)))
             graphics.DrawRectangle(pen, bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
 
-        // Changed cells: red border when increased, blue when decreased (against the
-        // original value, or the compared value when comparing).
+        // Changed cells: a border in the increased colour (red by default) or the decreased colour
+        // (blue), against the original value, or the compared value when comparing.
         if (gc.Cell is { IsStatic: false } cell)
         {
             double reference = _table.CompareTable == null ? cell.OriginalValue : cell.CompareToValue;

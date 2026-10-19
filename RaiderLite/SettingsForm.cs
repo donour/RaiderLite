@@ -18,6 +18,7 @@ public sealed class SettingsForm : DialogBase
     private readonly NumericUpDown _cellHeight = new() { Minimum = 14, Maximum = 60, Width = 70 };
     private readonly TextBox _tuneLibrary = new() { Width = 300 };
     private readonly Dictionary<string, Button> _colorButtons = [];
+    private readonly ToolTip _tips = new();
 
     public SettingsForm(AppSettings settings) : base("Settings")
     {
@@ -94,19 +95,16 @@ public sealed class SettingsForm : DialogBase
         AddColor(colors, "Warning", settings.WarningColor);
         Row("Colours", colors);
 
+        var presets = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
         var reset = new Button { Text = "Default Colours", AutoSize = true };
-        reset.Click += (_, _) =>
-        {
-            var d = new AppSettings();
-            SetColor("Min", d.MinColor);
-            SetColor("Max", d.MaxColor);
-            SetColor("Selection", d.HighlightColor);
-            SetColor("Increased", d.IncreaseBorder);
-            SetColor("Decreased", d.DecreaseBorder);
-            SetColor("Axis", d.AxisColor);
-            SetColor("Warning", d.WarningColor);
-        };
-        Row("", reset);
+        reset.Click += (_, _) => ApplyPreset(ColorPreset.Default);
+        var colorBlind = new Button { Text = "Colour-blind Friendly", AutoSize = true };
+        colorBlind.Click += (_, _) => ApplyPreset(ColorPreset.ColorBlind);
+        _tips.SetToolTip(colorBlind, "Light orange to dark red shading, and blue, sky blue, yellow and black for the rest:\n" +
+                                     "colours that stay distinct with red-green or blue-yellow colour blindness.");
+        presets.Controls.Add(reset);
+        presets.Controls.Add(colorBlind);
+        Row("", presets);
 
         Controls.Add(layout);
         layout.BringToFront();
@@ -124,6 +122,17 @@ public sealed class SettingsForm : DialogBase
         _colorButtons[name] = button;
         panel.Controls.Add(button);
         SetColor(name, color);
+    }
+
+    private void ApplyPreset(ColorPreset preset)
+    {
+        SetColor("Min", preset.Min);
+        SetColor("Max", preset.Max);
+        SetColor("Selection", preset.Selection);
+        SetColor("Increased", preset.Increased);
+        SetColor("Decreased", preset.Decreased);
+        SetColor("Axis", preset.Axis);
+        SetColor("Warning", preset.Warning);
     }
 
     private void SetColor(string name, Color color)

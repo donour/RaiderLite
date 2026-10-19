@@ -190,15 +190,38 @@ public sealed partial class MainForm : Form
         file.DropDownItems.Add(new ToolStripMenuItem("New &Revision...", null, async (_, _) => await NewRevisionAsync(), Keys.Control | Keys.Shift | Keys.N));
         file.DropDownItems.Add(new ToolStripMenuItem("New Ca&r...", null, (_, _) => NewCar()));
         file.DropDownItems.Add(new ToolStripSeparator());
-        file.DropDownItems.Add(new ToolStripMenuItem("&Save Image", null, (_, _) => SaveRom(SelectedRom, saveAs: false), Keys.Control | Keys.S));
-        file.DropDownItems.Add(new ToolStripMenuItem("Save Image &As...", null, (_, _) => SaveRom(SelectedRom, saveAs: true), Keys.Control | Keys.Shift | Keys.S));
+        // Items that act on the selected image, and Close All, which needs any image open.
+        ToolStripMenuItem[] imageItems =
+        [
+            new("&Save Image", null, (_, _) => SaveRom(SelectedRom, saveAs: false), Keys.Control | Keys.S),
+            new("Save Image &As...", null, (_, _) => SaveRom(SelectedRom, saveAs: true), Keys.Control | Keys.Shift | Keys.S),
+            new("&Close Image", null, (_, _) => CloseRom(SelectedRom)),
+            new("Image &Properties...", null, (_, _) => ShowRomProperties(SelectedRom)),
+        ];
+        var closeAll = new ToolStripMenuItem("Close All &Images", null, (_, _) => CloseAllRoms());
+        file.DropDownItems.Add(imageItems[0]);
+        file.DropDownItems.Add(imageItems[1]);
         file.DropDownItems.Add(new ToolStripSeparator());
-        file.DropDownItems.Add(new ToolStripMenuItem("&Close Image", null, (_, _) => CloseRom(SelectedRom)));
-        file.DropDownItems.Add(new ToolStripMenuItem("Close All &Images", null, (_, _) => CloseAllRoms()));
+        file.DropDownItems.Add(imageItems[2]);
+        file.DropDownItems.Add(closeAll);
         file.DropDownItems.Add(new ToolStripSeparator());
-        file.DropDownItems.Add(new ToolStripMenuItem("Image &Properties...", null, (_, _) => ShowRomProperties(SelectedRom)));
+        file.DropDownItems.Add(imageItems[3]);
         file.DropDownItems.Add(new ToolStripSeparator());
         file.DropDownItems.Add(new ToolStripMenuItem("E&xit", null, (_, _) => Close()));
+        file.DropDownOpening += (_, _) =>
+        {
+            bool selected = SelectedRom != null;
+            foreach (var item in imageItems)
+                item.Enabled = selected;
+            closeAll.Enabled = _roms.Count > 0;
+        };
+        // Enabled again once the menu closes, as a disabled item's shortcut (Ctrl+S) wouldn't work.
+        file.DropDownClosed += (_, _) =>
+        {
+            foreach (var item in imageItems)
+                item.Enabled = true;
+            closeAll.Enabled = true;
+        };
 
         var edit = new ToolStripMenuItem("&Edit");
         _undoItem.ShortcutKeyDisplayString = "Ctrl+Z";
