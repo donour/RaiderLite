@@ -75,6 +75,8 @@ public abstract class Table
         get
         {
             var settings = CoreSettings.Current;
+            if (Rom?.ReadOnlyReason is { } imageReason)
+                return imageReason;
             if (Locked)
                 return "locked";
             if (IsChecksumFixTable)

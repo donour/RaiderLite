@@ -110,10 +110,11 @@ public sealed class RibbonBar : Panel
         big.Items.Add(Large("Open", IconFont.Open, "Open an image (Ctrl+O)", async () => await _main.OpenImageDialogAsync(), Accent));
         big.Items.Add(Large("Save", IconFont.Save, "Save the image (Ctrl+S)", () => _main.SaveRom(_main.CurrentRom, saveAs: false), Accent, _romItems));
         g.Controls.Add(big);
+        // Image properties stay in the File menu and the image's context menu.
         g.Controls.Add(Column(
+            Small("New Revision", IconFont.NewRevision, "Make a new revision from this one (Ctrl+Shift+N)", async () => await _main.NewRevisionAsync(), null, Green),
             Small("Save As", IconFont.SaveAs, "Save the image under a new name (Ctrl+Shift+S)", () => _main.SaveRom(_main.CurrentRom, saveAs: true), _romItems),
-            Small("Close", IconFont.Close, "Close the image", () => _main.CloseRom(_main.CurrentRom), _romItems),
-            Small("Properties", IconFont.Info, "Image properties and load warnings", () => _main.ShowRomProperties(_main.CurrentRom), _romItems)));
+            Small("Close", IconFont.Close, "Close the image", () => _main.CloseRom(_main.CurrentRom), _romItems)));
     }
 
     [MemberNotNull(nameof(_undo), nameof(_redo))]

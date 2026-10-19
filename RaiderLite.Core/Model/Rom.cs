@@ -58,6 +58,26 @@ public sealed class Rom
 
     public event EventHandler? DirtyChanged;
 
+    /// <summary>
+    /// Why no value of the image may be changed (a locked revision), or null. Edits then throw
+    /// <see cref="ImageReadOnlyException"/>, so the editor can offer an alternative.
+    /// </summary>
+    public string? ReadOnlyReason
+    {
+        get => _readOnlyReason;
+        set
+        {
+            if (_readOnlyReason == value)
+                return;
+            _readOnlyReason = value;
+            ReadOnlyChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private string? _readOnlyReason;
+
+    public event EventHandler? ReadOnlyChanged;
+
     public Table? GetTable(string name) => _tablesByName.GetValueOrDefault(name);
 
     /// <summary>Adds a table, replacing one with the same name (keeping its position).</summary>
@@ -179,6 +199,14 @@ public sealed class Rom
             list.Add(cell);
         }
     }
+
+    /// <summary>Cells with a value in the byte at <paramref name="address"/>; empty if none.</summary>
+    internal IReadOnlyList<DataCell> CellsAt(int address) =>
+        _cellsByByte.TryGetValue(address, out var cells) ? cells : [];
+
+    /// <summary>Whether <paramref name="table"/> is one of this rom's tables (not a removed or replaced one).</summary>
+    internal bool IsLive(Table table) =>
+        _tablesByName.TryGetValue(table.Name, out var live) && ReferenceEquals(live, table);
 
     /// <summary>
     /// Other tables (shown in the tree; axes resolve to their table) with values in any of the

@@ -45,6 +45,23 @@ public sealed class AppSettings
     public string LastImageDir { get; set; } = "";
     public string LastDefinitionDir { get; set; } = "";
 
+    // Tunes
+    /// <summary>The tune library folder; empty means <see cref="DefaultTuneLibrary"/>.</summary>
+    public string TuneLibrary { get; set; } = "";
+    /// <summary>Folder name (in the library) of the car shown last.</summary>
+    public string LastCar { get; set; } = "";
+    public bool ShowHiddenRevisions { get; set; }
+    /// <summary>The left panel's tab: "Tunes" or "Tables".</summary>
+    public string LeftPanel { get; set; } = "Tables";
+    /// <summary>Height of the timeline above the revision details, in pixels; 0 for the default.</summary>
+    public int TimelineHeight { get; set; }
+
+    public static string DefaultTuneLibrary =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "RaiderLite Tunes");
+
+    [JsonIgnore]
+    public string TuneLibraryFolder => string.IsNullOrWhiteSpace(TuneLibrary) ? DefaultTuneLibrary : TuneLibrary;
+
     // Editing
     public int UserLevel { get; set; } = 1;
     public bool DisplayHighTables { get; set; } = true;

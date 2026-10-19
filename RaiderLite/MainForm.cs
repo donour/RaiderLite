@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Reflection;
 using RaiderLite.Core.Definitions;
 using RaiderLite.Core.Model;
+using RaiderLite.Core.Tunes;
 
 namespace RaiderLite;
 
@@ -22,7 +23,7 @@ public sealed class MainForm : Form
 
     private readonly MenuStrip _menu = new();
     private readonly TreeView _tree = new() { Dock = DockStyle.Fill, HideSelection = false, ShowNodeToolTips = true, BorderStyle = BorderStyle.None };
-    private readonly TextBox _filter = new() { Dock = DockStyle.Top, PlaceholderText = "Filter tables (Ctrl+F)" };
+    private readonly TextBox _filter = new() { Dock = DockStyle.Top, PlaceholderText = "Filter tables (Ctrl+F)", AccessibleName = "Filter tables" };
     private readonly Panel _treePanel = new() { Dock = DockStyle.Left, Width = 320 };
     private readonly Splitter _splitter = new() { Dock = DockStyle.Left, Width = 4 };
     private readonly Panel _status = new() { Dock = DockStyle.Bottom, Height = 24, Padding = new Padding(6, 0, 18, 0) };
@@ -37,6 +38,19 @@ public sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _filterTimer = new() { Interval = 250 };
     private readonly MdiClient _mdiClient;
     private TableForm? _activeTable;
+
+    // Tunes: one car object per folder, and the revision each open image is (if any).
+    private readonly CarRegistry _cars = new();
+    private readonly Dictionary<Rom, Revision> _romRevisions = [];
+    private readonly Panel _tablesPage = new() { Dock = DockStyle.Fill };
+    private readonly TunesPanel _tunesPanel;
+    private readonly RadioButton _tablesTab = PanelTab("Tables");
+    private readonly RadioButton _tunesTab = PanelTab("Tunes");
+    private bool _carsListed;
+    private readonly Panel _lockBar = new() { Dock = DockStyle.Top, Visible = false, BackColor = Color.FromArgb(255, 244, 206) };
+    private readonly Label _lockText = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, UseMnemonic = false };
+    private readonly Button _lockNewRevision = new() { Dock = DockStyle.Right, AutoSize = true, BackColor = SystemColors.Control };
+    private Revision? _lockBarRevision;
 
     public MainForm(string[] filesToOpen)
     {
@@ -60,13 +74,37 @@ public sealed class MainForm : Form
             _tree.ImageList = TreeIcons.Create(DeviceDpi);
             old?.Dispose();
         };
-        _treePanel.Controls.Add(_tree);
-        _treePanel.Controls.Add(_filter);
+        _tablesPage.Controls.Add(_tree);
+        _tablesPage.Controls.Add(_filter);
+        _tunesPanel = new TunesPanel(this, _cars) { Dock = DockStyle.Fill, Visible = false };
+        _treePanel.Controls.Add(_tablesPage);
+        _treePanel.Controls.Add(_tunesPanel);
+        _treePanel.Controls.Add(BuildPanelTabs());
+
+        // The locked-revision bar: a lock, what is locked and why, and the way to change it.
+        _lockBar.Height = LogicalToDeviceUnits(34);
+        _lockBar.Padding = new Padding(LogicalToDeviceUnits(8), LogicalToDeviceUnits(4), LogicalToDeviceUnits(8), LogicalToDeviceUnits(4));
+        var lockIcon = new PictureBox
+        {
+            Dock = DockStyle.Left,
+            Width = LogicalToDeviceUnits(24),
+            SizeMode = PictureBoxSizeMode.CenterImage,
+            Image = IconFont.Render(IconFont.Lock, LogicalToDeviceUnits(16), Color.FromArgb(120, 90, 0)),
+        };
+        _lockBar.Controls.Add(_lockText);
+        _lockBar.Controls.Add(lockIcon);
+        _lockBar.Controls.Add(_lockNewRevision);
+        _lockNewRevision.Click += async (_, _) =>
+        {
+            if (_lockBarRevision != null)
+                await NewRevisionAsync(_lockBarRevision);
+        };
 
         // Dock order: added last docks first.
         Controls.Add(_splitter);
         Controls.Add(_treePanel);
         Controls.Add(_status);
+        Controls.Add(_lockBar);
         Controls.Add(Toolbar);
         Controls.Add(_menu);
         MainMenuStrip = _menu;
@@ -125,6 +163,7 @@ public sealed class MainForm : Form
         };
 
         RestoreWindow();
+        ShowLeftPanel(tunes: AppSettings.Current.LeftPanel == "Tunes");
         UpdateUserLevelMenu();
         UpdateRecentMenu();
         UpdateUndoMenu();
@@ -154,6 +193,9 @@ public sealed class MainForm : Form
         var file = new ToolStripMenuItem("&File");
         file.DropDownItems.Add(new ToolStripMenuItem("&Open Image...", null, async (_, _) => await OpenImageDialogAsync(), Keys.Control | Keys.O));
         file.DropDownItems.Add(_recentMenu);
+        file.DropDownItems.Add(new ToolStripSeparator());
+        file.DropDownItems.Add(new ToolStripMenuItem("New &Revision...", null, async (_, _) => await NewRevisionAsync(), Keys.Control | Keys.Shift | Keys.N));
+        file.DropDownItems.Add(new ToolStripMenuItem("New Ca&r...", null, (_, _) => NewCar()));
         file.DropDownItems.Add(new ToolStripSeparator());
         file.DropDownItems.Add(new ToolStripMenuItem("&Save Image", null, (_, _) => SaveRom(SelectedRom, saveAs: false), Keys.Control | Keys.S));
         file.DropDownItems.Add(new ToolStripMenuItem("Save Image &As...", null, (_, _) => SaveRom(SelectedRom, saveAs: true), Keys.Control | Keys.Shift | Keys.S));
@@ -203,7 +245,10 @@ public sealed class MainForm : Form
         view.DropDownItems.Add(new ToolStripSeparator());
         view.DropDownItems.Add(new ToolStripMenuItem("&Expand All", null, (_, _) => _tree.ExpandAll()));
         view.DropDownItems.Add(new ToolStripMenuItem("&Collapse All", null, (_, _) => CollapseToRoms()));
-        view.DropDownItems.Add(new ToolStripMenuItem("&Find Table", null, (_, _) => _filter.Focus(), Keys.Control | Keys.F));
+        view.DropDownItems.Add(new ToolStripMenuItem("&Find Table", null, (_, _) => FocusFilter(), Keys.Control | Keys.F));
+        view.DropDownItems.Add(new ToolStripSeparator());
+        view.DropDownItems.Add(new ToolStripMenuItem("T&unes", null, (_, _) => ShowLeftPanel(tunes: true)));
+        view.DropDownItems.Add(new ToolStripMenuItem("&Tables", null, (_, _) => ShowLeftPanel(tunes: false)));
 
         var tools = new ToolStripMenuItem("&Tools");
         tools.DropDownItems.Add(new ToolStripMenuItem("&Compare Images...", null, (_, _) => ShowCompareImages()));
@@ -346,6 +391,7 @@ public sealed class MainForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        _tunesPanel.CommitEdits();
         foreach (var rom in _roms.ToList())
         {
             if (!ConfirmDiscard(rom))
@@ -376,7 +422,11 @@ public sealed class MainForm : Form
     /// <summary>The image the image commands act on: the active table's, else the tree selection's.</summary>
     internal Rom? CurrentRom => SelectedRom;
 
-    internal void FocusFilter() => _filter.Focus();
+    internal void FocusFilter()
+    {
+        ShowLeftPanel(tunes: false);
+        _filter.Focus();
+    }
 
     private Rom? SelectedRom
     {
@@ -398,6 +448,7 @@ public sealed class MainForm : Form
     private void UpdateTreeSelectionStatus()
     {
         UpdateUndoMenu();
+        UpdateTitle();
         if (_tree.SelectedNode?.Tag is Table t)
         {
             var scale = t.CurrentScale;
@@ -487,13 +538,17 @@ public sealed class MainForm : Form
         return doc;
     }
 
-    public async Task OpenImageAsync(string path)
+    /// <summary>
+    /// Opens an image, finding its definition; <paramref name="preferredXmlId"/> wins among several
+    /// matches (a revision's car knows its definition). Returns the rom, or null if not opened.
+    /// </summary>
+    public async Task<Rom?> OpenImageAsync(string path, string? preferredXmlId = null)
     {
         if (_roms.Any(r => string.Equals(r.FilePath, path, StringComparison.OrdinalIgnoreCase)))
         {
             if (MessageBox.Show(this, $"{Path.GetFileName(path)} is already open. Open another copy?", "Open Image",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
-                return;
+                return null;
         }
 
         byte[] image;
@@ -505,14 +560,14 @@ public sealed class MainForm : Form
             {
                 MessageBox.Show(this, $"{Path.GetFileName(path)} is larger than 64 MB and doesn't look like an ECU image.", "Open Image",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                return null;
             }
             image = await File.ReadAllBytesAsync(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             MessageBox.Show(this, ex.Message, "Open Image", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
+            return null;
         }
 
         UseWaitCursor = true;
@@ -523,39 +578,20 @@ public sealed class MainForm : Form
             var errors = new List<string>();
             // Every definition is checked: the first match isn't necessarily the right one when one
             // ID is a prefix of another, and a wrong definition would edit the wrong addresses.
-            var matches = await Task.Run(() =>
-            {
-                var found = new List<(DefinitionDocument Doc, RomDefinitionInfo Info)>();
-                foreach (var defPath in definitionFiles)
-                {
-                    if (!File.Exists(defPath))
-                    {
-                        errors.Add($"Definition file not found: {defPath}");
-                        continue;
-                    }
-                    try
-                    {
-                        var doc = LoadDefinition(defPath);
-                        found.AddRange(doc.FindMatches(image).Select(info => (doc, info)));
-                    }
-                    catch (DefinitionException ex)
-                    {
-                        errors.Add(ex.Message);
-                    }
-                }
-                // Most specific first; definition list order otherwise.
-                return found.OrderByDescending(m => m.Info.Id.MatchLength).ToList();
-            });
+            var matches = await Task.Run(() => FindDefinitionMatches(definitionFiles, image, errors));
             UseWaitCursor = false;
             foreach (var error in errors)
                 SetStatus(error);
 
-            (DefinitionDocument Doc, RomDefinitionInfo Info)? chosen = matches.Count > 0 ? matches[0] : null;
+            int preferred = preferredXmlId == null
+                ? -1
+                : matches.FindIndex(m => string.Equals(m.Info.Id.XmlId, preferredXmlId, StringComparison.OrdinalIgnoreCase));
+            (DefinitionDocument Doc, RomDefinitionInfo Info)? chosen = matches.Count > 0 ? matches[Math.Max(0, preferred)] : null;
             chosen ??= ChooseDefinitionManually(path, image, errors);
             if (chosen is not { } c)
             {
                 SetStatus("Open cancelled.");
-                return;
+                return null;
             }
 
             UseWaitCursor = true;
@@ -563,7 +599,9 @@ public sealed class MainForm : Form
             var rom = await Task.Run(() => RomUnmarshaller.Load(c.Doc, c.Info.Node, image, path));
             foreach (var (doc, info) in matches.Where(m => !ReferenceEquals(m.Info, c.Info)))
             {
-                rom.Warnings.Add(info.Id.MatchLength == c.Info.Id.MatchLength
+                rom.Warnings.Add(preferred >= 0
+                    ? $"This image also matches {info.Id.XmlId} ({Path.GetFileName(doc.Path)}); {c.Info.Id.XmlId} was used because it is the definition of the car this revision belongs to."
+                    : info.Id.MatchLength == c.Info.Id.MatchLength
                     ? $"This image also matches {info.Id.XmlId} ({Path.GetFileName(doc.Path)}), equally specifically; {c.Info.Id.XmlId} was used because it comes first in the definition list. Check it is the right one."
                     : $"This image also matches {info.Id.XmlId} ({Path.GetFileName(doc.Path)}); {c.Info.Id.XmlId} was used because its ID is more specific.");
             }
@@ -571,11 +609,13 @@ public sealed class MainForm : Form
             AppSettings.Current.AddRecentFile(path);
             UpdateRecentMenu();
             ReportLoad(rom);
+            return rom;
         }
         catch (DefinitionException ex)
         {
             MessageBox.Show(this, ex.Message, $"Error loading {Path.GetFileName(path)}", MessageBoxButtons.OK, MessageBoxIcon.Error);
             SetStatus("Error loading image.");
+            return null;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -584,11 +624,39 @@ public sealed class MainForm : Form
             MessageBox.Show(this, $"{Path.GetFileName(path)} could not be loaded:\n\n{ex.GetType().Name}: {ex.Message}",
                 "Error Loading Image", MessageBoxButtons.OK, MessageBoxIcon.Error);
             SetStatus("Error loading image.");
+            return null;
         }
         finally
         {
             UseWaitCursor = false;
         }
+    }
+
+    /// <summary>
+    /// The definitions in <paramref name="definitionFiles"/> that match <paramref name="image"/>, most
+    /// specific first (definition list order otherwise); problems go to <paramref name="errors"/>.
+    /// </summary>
+    private List<(DefinitionDocument Doc, RomDefinitionInfo Info)> FindDefinitionMatches(IReadOnlyList<string> definitionFiles, byte[] image, List<string> errors)
+    {
+        var found = new List<(DefinitionDocument Doc, RomDefinitionInfo Info)>();
+        foreach (var defPath in definitionFiles)
+        {
+            if (!File.Exists(defPath))
+            {
+                errors.Add($"Definition file not found: {defPath}");
+                continue;
+            }
+            try
+            {
+                var doc = LoadDefinition(defPath);
+                found.AddRange(doc.FindMatches(image).Select(info => (doc, info)));
+            }
+            catch (DefinitionException ex)
+            {
+                errors.Add(ex.Message);
+            }
+        }
+        return found.OrderByDescending(m => m.Info.Id.MatchLength).ToList();
     }
 
     /// <summary>No configured definition matched: let the user pick a file and, if needed, a rom in it.</summary>
@@ -679,6 +747,17 @@ public sealed class MainForm : Form
     private void AddRom(Rom rom)
     {
         _roms.Add(rom);
+        if (_cars.FindRevision(rom.FilePath) is { } revision)
+            _romRevisions[rom] = revision;
+        _tunesPanel.RefreshMarks();
+        // A table's header says when its image is read-only; the lock bar offers a way out.
+        rom.ReadOnlyChanged += (_, _) =>
+        {
+            foreach (var form in _openTables.Values.Where(f => f.Rom == rom))
+                form.ApplySettings();
+            UpdateTitle();
+        };
+        RefreshRevisionLocks();
         rom.DirtyChanged += (_, _) => Post(() => UpdateRomNode(rom));
         rom.History.Changed += (_, _) => Post(UpdateUndoMenu);
         foreach (var table in rom.Tables)
@@ -725,7 +804,16 @@ public sealed class MainForm : Form
             path = dialog.FileName;
         }
 
-        var temp = $"{path}.{Guid.NewGuid():N}.tmp";
+        // A locked revision (stock, or with revisions based on it) keeps its image.
+        var revision = _cars.FindRevision(path);
+        if (revision != null && revision.Car.IsLocked(revision))
+        {
+            if (MessageBox.Show(this, $"{revision} ({revision.Car.Name}) is locked because {WhyLocked(revision)}, so its image can't be changed.\n\nSave your changes to another file instead?",
+                    "Revision Locked", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                return SaveRom(rom, saveAs: true);
+            return false;
+        }
+
         try
         {
             var bytes = rom.PrepareForSave(out int checksums);
@@ -736,56 +824,45 @@ public sealed class MainForm : Form
             {
                 return false;
             }
-            // Write a temporary file next to the image, flushed to disk, then swap it in: a failed
-            // write, a full disk or a power cut can't leave a truncated or half-written image.
-            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                stream.Write(bytes);
-                stream.Flush(flushToDisk: true);
-            }
-            ReplaceFile(temp, path);
+            SafeFile.WriteAllBytes(path, bytes);
             rom.FilePath = path;
+            if (revision != null)
+            {
+                _romRevisions[rom] = revision;
+                try
+                {
+                    revision.Car.ImageSaved(revision);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // The image is saved; only the car's record of it is behind.
+                    MessageBox.Show(this, $"The image was saved, but {revision.Car.Name}'s index couldn't be updated:\n\n{ex.Message}",
+                        "Save Image", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                SuggestNotes(revision, rom);
+                _tunesPanel.OnImageSaved(revision);
+            }
+            else
+            {
+                _romRevisions.Remove(rom);
+            }
+            RefreshRevisionLocks();
+            if (revision == null)
+                rom.ReadOnlyReason = null;
             rom.IsDirty = false;
             AppSettings.Current.AddRecentFile(path);
             UpdateRecentMenu();
             UpdateRomNode(rom);
             foreach (var form in _openTables.Values.Where(f => f.Rom == rom))
-                form.Text = $"{form.Table.Name} - {rom.FileName}";
+                form.Text = $"{form.Table.Name} - {ImageName(rom)}";
             SetStatus($"Saved {path}" + (rom.TotalChecksums > 0 ? $" ({checksums} checksum(s) updated)." : "."));
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            try
-            {
-                File.Delete(temp);
-            }
-            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
-            {
-                // Leave it; the original image is untouched either way.
-            }
+            // SafeFile leaves the original image untouched when a write fails.
             MessageBox.Show(this, ex.Message, "Save Image", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return false;
-        }
-    }
-
-    /// <summary>Moves <paramref name="source"/> over <paramref name="destination"/> in one step.</summary>
-    private static void ReplaceFile(string source, string destination)
-    {
-        if (!File.Exists(destination))
-        {
-            File.Move(source, destination);
-            return;
-        }
-        try
-        {
-            // Atomic, and keeps the image's attributes and permissions.
-            File.Replace(source, destination, destinationBackupFileName: null);
-        }
-        catch (IOException)
-        {
-            // Some file systems (e.g. network shares) can't replace; a move still never truncates.
-            File.Move(source, destination, overwrite: true);
         }
     }
 
@@ -816,8 +893,11 @@ public sealed class MainForm : Form
         foreach (var table in rom.Tables)
             table.DataChanged -= OnAnyTableChanged;
         _roms.Remove(rom);
+        _romRevisions.Remove(rom);
+        _tunesPanel.RefreshMarks();
         RebuildTree();
         UpdateUndoMenu();
+        UpdateTitle();
         SetStatus($"Closed {rom.FileName}.");
     }
 
@@ -843,6 +923,12 @@ public sealed class MainForm : Form
     {
         if (rom?.History.CanUndo != true)
             return;
+        // Undo writes values straight back, past the read-only check of an edit.
+        if (rom.ReadOnlyReason != null)
+        {
+            OnEditBlocked(rom);
+            return;
+        }
         var name = rom.History.UndoName;
         rom.History.Undo();
         SetStatus($"Undid {name}.");
@@ -853,6 +939,11 @@ public sealed class MainForm : Form
     {
         if (rom?.History.CanRedo != true)
             return;
+        if (rom.ReadOnlyReason != null)
+        {
+            OnEditBlocked(rom);
+            return;
+        }
         var name = rom.History.RedoName;
         rom.History.Redo();
         SetStatus($"Redid {name}.");
@@ -969,7 +1060,9 @@ public sealed class MainForm : Form
 
     private static string NodeKey(TreeNode node) => node.FullPath + "|" + (node.Tag is Rom r ? r.GetHashCode().ToString(CultureInfo.InvariantCulture) : "");
 
-    private static string RomNodeText(Rom rom) => (rom.IsDirty ? "* " : "") + $"{rom.FileName}  [{rom.RomId.XmlId}]";
+    // A revision shows as "037 Race TC slip target", which says more than its file name.
+    private string RomNodeText(Rom rom) => (rom.IsDirty ? "* " : "") +
+        (_romRevisions.TryGetValue(rom, out var revision) ? $"{revision}  [{rom.RomId.XmlId}]" : $"{rom.FileName}  [{rom.RomId.XmlId}]");
 
     private static string TableToolTip(Table table)
     {
@@ -984,7 +1077,32 @@ public sealed class MainForm : Form
     {
         if (_tree.Nodes.Cast<TreeNode>().FirstOrDefault(n => n.Tag == rom) is { } node)
             node.Text = RomNodeText(rom);
-        Text = _roms.Any(r => r.IsDirty) ? "RaiderLite *" : "RaiderLite";
+        UpdateTitle();
+    }
+
+    /// <summary>"RaiderLite — car › revision" when the current image is a revision; * while anything is unsaved.</summary>
+    private void UpdateTitle()
+    {
+        var rom = SelectedRom;
+        var title = rom != null && _romRevisions.TryGetValue(rom, out var revision)
+            ? $"RaiderLite — {revision.Car.Name} › {revision}"
+            : "RaiderLite";
+        if (_roms.Any(r => r.IsDirty))
+            title += " *";
+        Text = title;
+        UpdateLockBar(rom);
+    }
+
+    /// <summary>Shows the bar under the ribbon while the current image is a locked revision.</summary>
+    private void UpdateLockBar(Rom? rom)
+    {
+        _lockBarRevision = rom?.ReadOnlyReason != null ? RevisionOf(rom) : null;
+        if (_lockBarRevision is { } revision)
+        {
+            _lockText.Text = $"{revision} is locked because {WhyLocked(revision)}. To change it, make a new revision from it.";
+            _lockNewRevision.Text = $"New Revision from {revision.Number:000}...";
+        }
+        _lockBar.Visible = _lockBarRevision != null;
     }
 
     private void OnAnyTableChanged(object? sender, EventArgs e)
@@ -1062,6 +1180,12 @@ public sealed class MainForm : Form
         switch (node.Tag)
         {
             case Rom rom:
+                if (RevisionOf(rom) is { } revision)
+                {
+                    menu.Items.Add("New &Revision...", null, async (_, _) => await NewRevisionAsync(revision));
+                    menu.Items.Add("Show in &Tunes", null, (_, _) => ShowRevisionInTunes(rom));
+                    menu.Items.Add(new ToolStripSeparator());
+                }
                 menu.Items.Add("&Save", null, (_, _) => SaveRom(rom, false));
                 menu.Items.Add("Save &As...", null, (_, _) => SaveRom(rom, true));
                 menu.Items.Add("&Close", null, (_, _) => CloseRom(rom));
@@ -1118,6 +1242,7 @@ public sealed class MainForm : Form
     public void OnTableActivated(TableForm? form)
     {
         _activeTable = form;
+        UpdateTitle();
         Toolbar.Bind(form);
         SetCellInfo("");
         if (form != null)
@@ -1171,9 +1296,12 @@ public sealed class MainForm : Form
 
     internal void ShowSettings()
     {
+        var library = AppSettings.Current.TuneLibraryFolder;
         using var dialog = new SettingsForm(AppSettings.Current);
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
+        if (_carsListed && !string.Equals(library, AppSettings.Current.TuneLibraryFolder, StringComparison.OrdinalIgnoreCase))
+            _tunesPanel.ReloadCars();
         AppSettings.Current.ApplyToCore();
         AppSettings.Current.Save();
         UpdateUserLevelMenu();
@@ -1191,6 +1319,374 @@ public sealed class MainForm : Form
         }
         var dialog = new CompareImagesForm(this, _roms);
         dialog.Show(this);
+    }
+
+    // ----- tunes -----
+
+    private static RadioButton PanelTab(string text)
+    {
+        var tab = new RadioButton
+        {
+            Text = text,
+            Appearance = Appearance.Button,
+            FlatStyle = FlatStyle.Flat,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Margin = new Padding(0),
+            BackColor = Color.FromArgb(236, 238, 241),
+        };
+        tab.FlatAppearance.BorderSize = 0;
+        tab.FlatAppearance.CheckedBackColor = SystemColors.Window;
+        return tab;
+    }
+
+    private TableLayoutPanel BuildPanelTabs()
+    {
+        var bar = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, RowCount = 1, Height = LogicalToDeviceUnits(28), Margin = new Padding(0) };
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        bar.Controls.Add(_tunesTab, 0, 0);
+        bar.Controls.Add(_tablesTab, 1, 0);
+        _tunesTab.CheckedChanged += (_, _) =>
+        {
+            if (_tunesTab.Checked)
+                ShowLeftPanel(tunes: true);
+        };
+        _tablesTab.CheckedChanged += (_, _) =>
+        {
+            if (_tablesTab.Checked)
+                ShowLeftPanel(tunes: false);
+        };
+        return bar;
+    }
+
+    /// <summary>Shows the Tunes or the Tables tab of the left panel.</summary>
+    internal void ShowLeftPanel(bool tunes)
+    {
+        _tunesTab.Checked = tunes;
+        _tablesTab.Checked = !tunes;
+        _tunesTab.Font = tunes ? UiFonts.Bold : UiFonts.Regular;
+        _tablesTab.Font = tunes ? UiFonts.Regular : UiFonts.Bold;
+        _tunesPanel.Visible = tunes;
+        _tablesPage.Visible = !tunes;
+        AppSettings.Current.LeftPanel = tunes ? "Tunes" : "Tables";
+        if (tunes && !_carsListed)
+        {
+            _carsListed = true;
+            _tunesPanel.ReloadCars();
+        }
+    }
+
+    internal bool IsRevisionOpen(Revision revision) => _romRevisions.Values.Any(r => ReferenceEquals(r, revision));
+
+    /// <summary>How windows name an image: "037 Race TC slip target" for a revision, else its file name.</summary>
+    internal string ImageName(Rom rom) => _romRevisions.TryGetValue(rom, out var revision) ? revision.ToString() : rom.FileName;
+
+    /// <summary>The revision an open image is, if it is one.</summary>
+    internal Revision? RevisionOf(Rom? rom) => rom != null && _romRevisions.TryGetValue(rom, out var revision) ? revision : null;
+
+    private Rom? RomOf(Revision revision) => _romRevisions.FirstOrDefault(kv => ReferenceEquals(kv.Value, revision)).Key;
+
+    internal static string WhyLocked(Revision revision) =>
+        revision.Car.LockReasonOf(revision) == LockReason.Stock ? "it is the car's stock image" : "other revisions are based on it";
+
+    /// <summary>Makes open images of locked revisions read-only (and the others editable again).</summary>
+    private void RefreshRevisionLocks()
+    {
+        foreach (var (rom, revision) in _romRevisions)
+            rom.ReadOnlyReason = revision.Car.IsLocked(revision) ? "locked revision" : null;
+        UpdateTitle();
+        Toolbar.UpdateState(SelectedRom);
+    }
+
+    /// <summary>An edit of a read-only image was refused: for a locked revision, offer a new revision from it.</summary>
+    internal void OnEditBlocked(Rom? rom)
+    {
+        if (rom?.ReadOnlyReason == null)
+            return;
+        if (RevisionOf(rom) is not { } revision)
+        {
+            MessageBox.Show(this, $"{rom.FileName} can't be changed ({rom.ReadOnlyReason}).", "Image Read-Only", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var create = new TaskDialogButton("&New Revision...");
+        var page = new TaskDialogPage
+        {
+            Caption = "Revision Locked",
+            Heading = $"{revision} is locked",
+            Text = $"Its image can't change because {WhyLocked(revision)}: the revisions based on it show what " +
+                   "changed from it. Make a new revision from it and change that instead.",
+            Icon = TaskDialogIcon.Information,
+            AllowCancel = true,
+            Buttons = { create, TaskDialogButton.Cancel },
+        };
+        if (TaskDialog.ShowDialog(this, page) == create)
+            _ = NewRevisionAsync(revision);
+    }
+
+    /// <summary>
+    /// New Revision: based on <paramref name="basedOn"/> (else the current image's revision, else the
+    /// one selected in the Tunes panel). Unsaved changes of the revision it is based on can be saved
+    /// there first or carried into the new one. Where that revision was open, its table windows
+    /// reopen on the new revision.
+    /// </summary>
+    internal async Task NewRevisionAsync(Revision? basedOn = null)
+    {
+        basedOn ??= RevisionOf(SelectedRom) ?? _tunesPanel.SelectedRevision;
+        if (basedOn == null)
+        {
+            MessageBox.Show(this, "Open a revision, or select one in the Tunes panel, to base the new revision on.", "New Revision",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        _tunesPanel.CommitEdits();
+        using var dialog = new NewRevisionForm(basedOn.Car, basedOn);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+        var parent = dialog.BasedOn;
+        var car = parent.Car;
+        var parentRom = RomOf(parent);
+
+        byte[]? carried = null;
+        if (parentRom is { IsDirty: true })
+        {
+            var save = new TaskDialogButton($"&Save them in {parent.Number:000} first");
+            var carry = new TaskDialogButton("&Put them in the new revision");
+            var page = new TaskDialogPage
+            {
+                Caption = "New Revision",
+                Heading = $"{parent} has unsaved changes",
+                Text = $"The new revision starts from {parent.Number:000}'s image. Its unsaved changes can go into {parent.Number:000}, or into the new revision (leaving {parent.Number:000} as it was saved).",
+                Icon = TaskDialogIcon.Warning,
+                AllowCancel = true,
+            };
+            if (!car.IsLocked(parent))
+                page.Buttons.Add(save);
+            page.Buttons.Add(carry);
+            page.Buttons.Add(TaskDialogButton.Cancel);
+            var answer = TaskDialog.ShowDialog(this, page);
+            if (answer == save)
+            {
+                if (!SaveRom(parentRom, saveAs: false))
+                    return;
+            }
+            else if (answer == carry)
+            {
+                carried = (byte[])parentRom.PrepareForSave(out _).Clone();
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        Revision revision;
+        try
+        {
+            revision = car.NewRevision(parent, dialog.RevisionLabel);
+            if (carried != null)
+            {
+                SafeFile.WriteAllBytes(revision.ImagePath, carried);
+                car.ImageSaved(revision);
+                SuggestNotes(revision, parentRom!);
+            }
+            if (dialog.Note.Length > 0)
+                car.WriteNotes(revision, dialog.Note + Environment.NewLine + car.ReadNotes(revision));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"The new revision couldn't be created:\n\n{ex.Message}", "New Revision", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        // Carry on in the new revision where the old one was open: same tables, same places
+        // (closing them stores their positions, which the new ones reopen at).
+        var tables = parentRom == null ? [] : _openTables.Values.Where(f => f.Rom == parentRom).Select(f => f.Table.Name).ToList();
+        if (parentRom != null)
+        {
+            parentRom.IsDirty = false;
+            CloseRom(parentRom);
+        }
+        RefreshRevisionLocks();
+        _tunesPanel.OnRevisionAdded(revision);
+        if (await OpenRevisionAsync(revision, showTables: true) is { } rom)
+        {
+            foreach (var name in tables)
+            {
+                if (rom.GetTable(name) is { } table)
+                    OpenTable(table);
+            }
+        }
+        SetStatus($"Created {revision} in {car.Name}, based on {parent}.");
+    }
+
+    /// <summary>
+    /// The first time a revision is saved with changes and no notes, starts its notes with a
+    /// "* table: " line for each table it changed from its parent.
+    /// </summary>
+    private void SuggestNotes(Revision revision, Rom template)
+    {
+        var car = revision.Car;
+        if (car.ParentOf(revision) is not { } parent)
+            return;
+        try
+        {
+            if (car.ReadNotes(revision).Trim().Length > 0)
+                return;
+            var changes = ImageDiff.Compare(template, File.ReadAllBytes(parent.ImagePath), File.ReadAllBytes(revision.ImagePath));
+            if (changes.Tables.Count > 0)
+                car.WriteNotes(revision, Changelog.SuggestedLines("", changes.Tables.Select(t => t.Table.Name)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Notes are a convenience; the image is saved.
+        }
+    }
+
+    /// <summary>Changes a revision's label (renaming its folder) and follows the move in open images.</summary>
+    internal void RelabelRevision(Revision revision, string label)
+    {
+        try
+        {
+            revision.Car.SetLabel(revision, label);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"{revision} couldn't be renamed:\n\n{ex.Message}", "Rename Revision", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+        foreach (var rom in _romRevisions.Where(kv => ReferenceEquals(kv.Value, revision)).Select(kv => kv.Key).ToList())
+        {
+            rom.FilePath = revision.ImagePath;
+            UpdateRomNode(rom);
+            foreach (var form in _openTables.Values.Where(f => f.Rom == rom))
+                form.Text = $"{form.Table.Name} - {ImageName(rom)}";
+        }
+        UpdateTitle();
+    }
+
+    /// <summary>New Car: a folder in the tune library whose revision 000 is a copy of the stock image.</summary>
+    internal void NewCar()
+    {
+        var library = AppSettings.Current.TuneLibraryFolder;
+        using var dialog = new NewCarForm(ImageFileFilter, library);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+        byte[] image;
+        try
+        {
+            image = File.ReadAllBytes(dialog.ImagePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, ex.Message, "New Car", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+        UseWaitCursor = true;
+        var errors = new List<string>();
+        var match = FindDefinitionMatches(AppSettings.Current.DefinitionFiles.ToList(), image, errors).FirstOrDefault();
+        UseWaitCursor = false;
+        if (match.Info == null)
+        {
+            MessageBox.Show(this, $"No definition in the definition list matches {Path.GetFileName(dialog.ImagePath)}. Add its definition with Edit > Definition Manager first." +
+                (errors.Count > 0 ? "\n\n" + string.Join("\n", errors.Take(5)) : ""), "New Car", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var folder = Path.Combine(library, Car.CleanLabel(dialog.CarName));
+        try
+        {
+            if (Directory.Exists(folder) && Directory.EnumerateFileSystemEntries(folder).Any())
+            {
+                MessageBox.Show(this, $"The tune library already has a folder named {Path.GetFileName(folder)}. Choose another name.", "New Car",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            Car.Create(folder, dialog.CarName, match.Info.Id.XmlId, dialog.ImagePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"The car couldn't be created:\n\n{ex.Message}", "New Car", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+        _carsListed = true;
+        ShowLeftPanel(tunes: true);
+        _tunesPanel.ReloadCars(select: folder);
+        SetStatus($"Created {dialog.CarName} ({match.Info.Id.XmlId}) in {library}.");
+    }
+
+    /// <summary>Shows the current image's revision in the Tunes panel.</summary>
+    internal void ShowRevisionInTunes(Rom? rom)
+    {
+        if (RevisionOf(rom) is not { } revision)
+            return;
+        ShowLeftPanel(tunes: true);
+        _tunesPanel.SelectRevision(revision);
+    }
+
+    /// <summary>The definition with this XML id among the configured definition files (also called off the UI thread).</summary>
+    internal (DefinitionDocument Doc, RomDefinitionInfo Info)? FindDefinition(string xmlId)
+    {
+        foreach (var path in AppSettings.Current.DefinitionFiles.ToList())
+        {
+            if (!File.Exists(path))
+                continue;
+            try
+            {
+                var doc = LoadDefinition(path);
+                if (doc.FindByXmlId(xmlId) is { } info)
+                    return (doc, info);
+            }
+            catch (DefinitionException)
+            {
+                // A broken definition file can't hold it; try the next.
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Opens a revision's image (or finds it already open). With <paramref name="showTables"/> the
+    /// left panel switches to its tables.
+    /// </summary>
+    internal async Task<Rom?> OpenRevisionAsync(Revision revision, bool showTables)
+    {
+        var rom = _romRevisions.FirstOrDefault(kv => ReferenceEquals(kv.Value, revision)).Key;
+        if (rom == null)
+        {
+            if (!File.Exists(revision.ImagePath))
+            {
+                MessageBox.Show(this, $"The image of {revision} is missing:\n{revision.ImagePath}", "Open Revision", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return null;
+            }
+            rom = await OpenImageAsync(revision.ImagePath, revision.Car.Definition);
+        }
+        if (rom != null && showTables)
+        {
+            ShowLeftPanel(tunes: false);
+            if (_tree.Nodes.Cast<TreeNode>().FirstOrDefault(n => n.Tag == rom) is { } node)
+            {
+                _tree.SelectedNode = node;
+                node.EnsureVisible();
+            }
+            _tree.Focus();
+        }
+        return rom;
+    }
+
+    /// <summary>Opens one table of two revisions side by side, comparing <paramref name="revision"/> against <paramref name="other"/>.</summary>
+    internal async Task OpenRevisionComparisonAsync(Revision revision, Revision other, string tableName)
+    {
+        if (await OpenRevisionAsync(revision, showTables: false) is not { } a || await OpenRevisionAsync(other, showTables: false) is not { } b)
+            return;
+        var left = a.GetTable(tableName);
+        var right = b.GetTable(tableName);
+        if (left == null || right == null || !left.IsCompatibleWith(right))
+        {
+            MessageBox.Show(this, $"{tableName} can't be compared: it isn't the same table in both images.", "Compare Revisions",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        OpenComparison(left, right);
     }
 
     /// <summary>Opens a table in two images side by side, comparing the first against the second.</summary>

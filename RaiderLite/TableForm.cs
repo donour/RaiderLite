@@ -49,7 +49,7 @@ public sealed class TableForm : Form
         _content = new ContentPanel(LayoutContent);
         // No layout passes while the window is being filled.
         _content.SuspendLayout();
-        Text = $"{table.Name} - {table.Rom?.FileName}";
+        Text = $"{table.Name} - {(table.Rom is { } rom ? main.ImageName(rom) : "")}";
         ShowIcon = false;
         KeyPreview = false;
         // Maximized MDI children hide their caption, and with their own (unmerged) menu bar the
@@ -80,7 +80,14 @@ public sealed class TableForm : Form
         {
             _grid = new TableGrid(table);
             _grid.Command += (_, c) => RunCommand(c);
-            _grid.ValueEntryStarted += (_, ch) => _main.Toolbar.BeginValueEntry(ch);
+            _grid.ValueEntryStarted += (_, ch) =>
+            {
+                // Typing a value into a locked revision asks about a new revision straight away.
+                if (Table.Rom?.ReadOnlyReason != null)
+                    _main.OnEditBlocked(Table.Rom);
+                else
+                    _main.Toolbar.BeginValueEntry(ch);
+            };
             _grid.CurrentCellChanged += (_, _) => _main.UpdateCellStatus(this);
             _grid.SelectionChanged += (_, _) =>
             {
@@ -306,7 +313,7 @@ public sealed class TableForm : Form
             return "";
         if (ReferenceEquals(_comparedTable, Table))
             return "original values";
-        return _comparedTable.Rom?.FileName ?? _comparedTable.Name;
+        return _comparedTable.Rom is { } rom ? _main.ImageName(rom) : _comparedTable.Name;
     }
 
     /// <summary>Resizes the window to show the whole table, within the MDI client area.</summary>
@@ -899,6 +906,11 @@ public sealed class TableForm : Form
             var hint = ex.Level > CoreSettings.Current.UserLevel ? "\nChange the user level in View > User Level." : "";
             MessageBox.Show(this, ex.Message + hint, "Table not modified",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (ImageReadOnlyException)
+        {
+            // A locked revision: nothing was written; offer a new revision to make the change in.
+            _main.OnEditBlocked(Table.Rom);
         }
     }
 

@@ -127,6 +127,12 @@ public sealed class UserLevelException(int level, string? message = null)
     public int Level { get; } = level;
 }
 
+/// <summary>An edit of an image that may not be changed (<see cref="Rom.ReadOnlyReason"/>).</summary>
+public sealed class ImageReadOnlyException(string reason) : Exception(reason)
+{
+    public string Reason { get; } = reason;
+}
+
 /// <summary>Hex helpers matching RomRaider's HexUtil.</summary>
 public static class HexUtil
 {

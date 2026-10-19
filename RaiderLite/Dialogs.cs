@@ -356,6 +356,7 @@ public sealed class SettingsForm : DialogBase
     private readonly CheckBox _singleClick = new() { Text = "Open and close tables with a single click (otherwise double-click)", AutoSize = true };
     private readonly NumericUpDown _cellWidth = new() { Minimum = 24, Maximum = 200, Width = 70 };
     private readonly NumericUpDown _cellHeight = new() { Minimum = 14, Maximum = 60, Width = 70 };
+    private readonly TextBox _tuneLibrary = new() { Width = 300 };
     private readonly Dictionary<string, Button> _colorButtons = [];
 
     public SettingsForm(AppSettings settings) : base("Settings")
@@ -404,6 +405,24 @@ public sealed class SettingsForm : DialogBase
         Full(_colorAxis);
         Row("Minimum cell width", _cellWidth);
         Row("Cell height", _cellHeight);
+
+        _tuneLibrary.Text = settings.TuneLibraryFolder;
+        var browse = new Button { Text = "Browse...", AutoSize = true, Margin = new Padding(3, 0, 0, 0) };
+        browse.Click += (_, _) =>
+        {
+            using var dialog = new FolderBrowserDialog
+            {
+                Description = "Choose the tune library folder: each car is a folder in it.",
+                UseDescriptionForTitle = true,
+                InitialDirectory = Directory.Exists(_tuneLibrary.Text) ? _tuneLibrary.Text : "",
+            };
+            if (dialog.ShowDialog(this) == DialogResult.OK)
+                _tuneLibrary.Text = dialog.SelectedPath;
+        };
+        var library = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+        library.Controls.Add(_tuneLibrary);
+        library.Controls.Add(browse);
+        Row("Tune library folder", library);
 
         var colors = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, MaximumSize = new Size(460, 0) };
         AddColor(colors, "Min", settings.MinColor);
@@ -469,6 +488,9 @@ public sealed class SettingsForm : DialogBase
         s.ShowGraphsByDefault = _showGraphs.Checked;
         s.CellWidth = (int)_cellWidth.Value;
         s.CellHeight = (int)_cellHeight.Value;
+        // The default library is stored as empty, so it follows the Documents folder.
+        var library = _tuneLibrary.Text.Trim();
+        s.TuneLibrary = library.Length == 0 || string.Equals(library, AppSettings.DefaultTuneLibrary, StringComparison.OrdinalIgnoreCase) ? "" : library;
         s.MinColor = _colorButtons["Min"].BackColor;
         s.MaxColor = _colorButtons["Max"].BackColor;
         s.HighlightColor = _colorButtons["Selection"].BackColor;
@@ -549,43 +571,31 @@ public sealed class CompareImagesForm : Form
         _list.BeginUpdate();
         _list.Items.Clear();
         int same = 0, different = 0, missing = 0;
-        foreach (var ta in a.Tables)
+        foreach (var c in ImageDiff.CompareRoms(a, b))
         {
-            var tb = b.GetTable(ta.Name);
-            string result;
-            Color color;
-            if (tb == null)
+            var (result, color) = c.Result switch
             {
-                result = $"Missing in {b.FileName}";
-                color = MissingColor;
-                missing++;
-            }
-            else if (!ta.IsCompatibleWith(tb))
+                TableComparisonResult.Same => ("Same", EqualColor),
+                TableComparisonResult.Different => ("Different", DifferentColor),
+                TableComparisonResult.DifferentSize => ("Different size", DifferentColor),
+                TableComparisonResult.MissingInSecond => ($"Missing in {b.FileName}", MissingColor),
+                _ => ($"Missing in {a.FileName}", MissingColor),
+            };
+            switch (c.Result)
             {
-                result = "Different size";
-                color = DifferentColor;
-                different++;
+                case TableComparisonResult.Same:
+                    same++;
+                    break;
+                case TableComparisonResult.Different or TableComparisonResult.DifferentSize:
+                    different++;
+                    break;
+                default:
+                    missing++;
+                    break;
             }
-            else if (ta.AllCells.Zip(tb.AllCells).All(p => p.First.IsStatic || p.First.BinValue == p.Second.BinValue))
-            {
-                result = "Same";
-                color = EqualColor;
-                same++;
-                if (_differencesOnly.Checked)
-                    continue;
-            }
-            else
-            {
-                result = "Different";
-                color = DifferentColor;
-                different++;
-            }
-            _list.Items.Add(new ListViewItem([ta.Name, ta.Category, result]) { ForeColor = color, Tag = (ta, tb) });
-        }
-        foreach (var tb in b.Tables.Where(t => a.GetTable(t.Name) == null))
-        {
-            missing++;
-            _list.Items.Add(new ListViewItem([tb.Name, tb.Category, $"Missing in {a.FileName}"]) { ForeColor = MissingColor, Tag = ((Table?)null, tb) });
+            if (c.Result == TableComparisonResult.Same && _differencesOnly.Checked)
+                continue;
+            _list.Items.Add(new ListViewItem([c.Name, c.Category, result]) { ForeColor = color, Tag = (c.First, c.Second) });
         }
         _list.EndUpdate();
         _summary.Text = $"{same} same, {different} different, {missing} missing in one image.";

@@ -167,9 +167,8 @@ public sealed class DataCell
         }
     }
 
-    private double ReadValue(int index)
+    private double ReadValue(byte[] input, int index)
     {
-        var input = _rom.Binary;
         int st = Table.StorageType;
         int address = Table.StorageAddress + index * StorageType.ByteLength(st) - Table.RamOffset;
 
@@ -180,7 +179,11 @@ public sealed class DataCell
         return ByteCodec.ReadMasked(input, Table.Endian, address, st, Table.Signed, BitMask);
     }
 
-    private double ReadValue()
+    /// <summary>
+    /// This cell's raw value as stored in <paramref name="image"/>, which must be laid out like the
+    /// cell's own image (same definition and size): used to compare images without loading them.
+    /// </summary>
+    internal double ReadValue(byte[] image)
     {
         int index = Table is TableBitwiseSwitch ? 0 : Index;
         if (Table.DataLayout == DataLayout.BoschSubtract)
@@ -188,16 +191,16 @@ public sealed class DataCell
             // Bosch Motronic subtract layout: value = 2^bits - sum of stored values from here to the end.
             double value = Math.Pow(2, 8 * Table.StorageType);
             for (int j = Table.DataSize - 1; j >= index; j--)
-                value -= ReadValue(j);
+                value -= ReadValue(image, j);
             return value;
         }
-        return ReadValue(index);
+        return ReadValue(image, index);
     }
 
     /// <summary>Re-reads the value from the image (e.g. after an aliased cell was written).</summary>
     internal void RefreshFromMemory()
     {
-        BinValue = ReadValue();
+        BinValue = ReadValue(_rom.Binary);
     }
 
     private void WriteToImage()
@@ -227,7 +230,7 @@ public sealed class DataCell
                 // Reverse the cross referencing: stored = 2^bits - value - sum(stored values after this one).
                 double crossed = Math.Pow(2, 8 * st) - BinValue;
                 for (int i = Table.DataSize - 1; i > index; i--)
-                    crossed -= ReadValue(i);
+                    crossed -= ReadValue(binData, i);
                 value = crossed;
             }
 
@@ -267,10 +270,13 @@ public sealed class DataCell
 
     /// <summary>Sets the raw value, clamped to the storage range, and writes it to the image.</summary>
     /// <exception cref="UserLevelException">The table's user level is above the current one.</exception>
+    /// <exception cref="ImageReadOnlyException">The image is read-only (a locked revision).</exception>
     public void SetBinValue(double newBinValue)
     {
         if (IsStatic || double.IsNaN(newBinValue) || BinValue == newBinValue || Table.Locked || Table.IsChecksumFixTable)
             return;
+        if (_rom.ReadOnlyReason is { } reason)
+            throw new ImageReadOnlyException(reason);
 
         if (Table.UserLevel > CoreSettings.Current.UserLevel)
             throw new UserLevelException(Table.UserLevel);
