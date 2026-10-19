@@ -26,7 +26,7 @@ internal sealed class RevisionCommands(IWin32Window owner, MainForm main)
 
     /// <summary>
     /// Deletes revisions after confirming: their folders go to the Recycle Bin and the revisions
-    /// based on them are based on the nearest surviving ancestor instead. Stock is never deleted.
+    /// based on them are based on the nearest surviving ancestor instead. 000 is never deleted.
     /// Returns false if nothing was deleted because the user cancelled; otherwise
     /// <paramref name="select"/> is the revision to show instead (the last one's survivor).
     /// </summary>

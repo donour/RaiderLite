@@ -85,17 +85,25 @@ public sealed class Car
 
     /// <summary>
     /// Creates a car in <paramref name="folder"/> (which must not exist or be empty) whose revision
-    /// 000 is a copy of <paramref name="stockImagePath"/>, keeping its file name and date.
+    /// 000, "Stock", is a copy of <paramref name="stockImagePath"/>, keeping its file name and date.
     /// </summary>
-    public static Car Create(string folder, string name, string definition, string stockImagePath)
+    public static Car Create(string folder, string name, string definition, string stockImagePath) =>
+        Create(folder, name, definition, File.ReadAllBytes(stockImagePath), Path.GetFileName(stockImagePath),
+            File.GetLastWriteTime(stockImagePath), "Stock");
+
+    /// <summary>
+    /// Creates a car in <paramref name="folder"/> (which must not exist or be empty) whose history
+    /// starts with <paramref name="image"/> as revision 000: stock, or an image imported at any
+    /// point of its tuning.
+    /// </summary>
+    public static Car Create(string folder, string name, string definition, byte[] image, string imageName, DateTime created, string label)
     {
         folder = Path.GetFullPath(folder);
         if (Directory.Exists(folder) && Directory.EnumerateFileSystemEntries(folder).Any())
             throw new IOException($"{folder} is not empty.");
         Directory.CreateDirectory(folder);
         var car = new Car(folder, name.Trim(), definition, []);
-        var created = File.GetLastWriteTime(stockImagePath);
-        car.AddRevision(null, "Stock", created, File.ReadAllBytes(stockImagePath), Path.GetFileName(stockImagePath));
+        car.AddRevision(null, label, created, image, imageName);
         car.Save();
         return car;
     }
@@ -146,13 +154,13 @@ public sealed class Car
     }
 
     /// <summary>
-    /// Stock and revisions others are based on can't be edited in place, so a revision's children
-    /// always show what changed from what it really was.
+    /// The first revision and revisions others are based on can't be edited in place, so a
+    /// revision's children always show what changed from what it really was.
     /// </summary>
     public LockReason LockReasonOf(Revision revision)
     {
         if (revision.Number == 0)
-            return LockReason.Stock;
+            return LockReason.First;
         if (_revisions.Any(r => r.Parent == revision.Number))
             return LockReason.HasChildren;
         return LockReason.None;
@@ -225,7 +233,7 @@ public sealed class Car
         Save();
     }
 
-    /// <summary>Sets the revision it was based on; refused for stock and when it would make a loop.</summary>
+    /// <summary>Sets the revision it was based on; refused for the first revision and when it would make a loop.</summary>
     public void SetParent(Revision revision, Revision? parent)
     {
         CheckOwn(revision);
@@ -233,7 +241,7 @@ public sealed class Car
         {
             CheckOwn(parent);
             if (revision.Number == 0)
-                throw new InvalidOperationException("Stock can't be based on another revision.");
+                throw new InvalidOperationException("The first revision (000) can't be based on another revision.");
             if (Lineage(parent).Contains(revision))
                 throw new InvalidOperationException($"{revision} can't be based on its own descendant {parent}.");
         }
@@ -259,14 +267,14 @@ public sealed class Car
     /// <summary>
     /// Deletes a revision: <paramref name="removeFolder"/> removes its folder (the editor sends it
     /// to the Recycle Bin; by default it is deleted), then the revisions based on it are based on
-    /// its parent instead. Stock can't be deleted, and its number isn't given out again. If removing
+    /// its parent instead. The first revision (000) can't be deleted, and its number isn't given out again. If removing
     /// the folder fails, nothing changes. Returns the revisions that were re-based.
     /// </summary>
     public IReadOnlyList<Revision> DeleteRevision(Revision revision, Action<string>? removeFolder = null)
     {
         CheckOwn(revision);
         if (revision.Number == 0)
-            throw new InvalidOperationException("Stock can't be deleted.");
+            throw new InvalidOperationException("The first revision (000) can't be deleted.");
         var children = ChildrenOf(revision);
         if (Directory.Exists(revision.FolderPath))
             (removeFolder ?? (path => Directory.Delete(path, recursive: true)))(revision.FolderPath);

@@ -44,7 +44,38 @@ public sealed class CarTests : IDisposable
         Assert.Equal(File.ReadAllBytes(_stock), File.ReadAllBytes(stock.ImagePath));
         Assert.Equal(Car.Hash(File.ReadAllBytes(_stock)), stock.Sha256);
         Assert.True(Car.IsCar(CarFolder));
-        Assert.Equal(LockReason.Stock, car.LockReasonOf(stock));
+        Assert.Equal(LockReason.First, car.LockReasonOf(stock));
+    }
+
+    [Fact]
+    public void ImportStartsTheHistoryFromAnyImage()
+    {
+        byte[] image = [9, 8, 7, 6];
+        var car = Car.Create(CarFolder, " 2011 Evora NA ", "T6-V00BU", image, "tuned.bin", new DateTime(2026, 3, 1, 9, 30, 15, 250), "Dealer  tune");
+        var first = Assert.Single(car.Revisions);
+        Assert.Equal(0, first.Number);
+        Assert.Null(first.Parent);
+        Assert.Equal("Dealer tune", first.Label);
+        Assert.Equal("000 2026-03-01 Dealer tune", first.Folder);
+        Assert.Equal("tuned.bin", first.Image);
+        Assert.Equal(new DateTime(2026, 3, 1, 9, 30, 15), first.Created);
+        Assert.Equal(image, File.ReadAllBytes(first.ImagePath));
+        Assert.Equal(Car.Hash(image), first.Sha256);
+        Assert.Equal(LockReason.First, car.LockReasonOf(first));
+
+        var reopened = Car.Open(CarFolder);
+        Assert.Equal("2011 Evora NA", reopened.Name);
+        Assert.Equal("Dealer tune", reopened.Get(0)!.Label);
+        Assert.Equal(1, reopened.NewRevision(reopened.Get(0)!, "Next").Number);
+    }
+
+    [Fact]
+    public void ImportRefusesAFolderInUseAndLeavesIt()
+    {
+        Directory.CreateDirectory(CarFolder);
+        File.WriteAllText(Path.Combine(CarFolder, "something.txt"), "x");
+        Assert.Throws<IOException>(() => Car.Create(CarFolder, "Car", "X", [1], "a.bin", DateTime.Now, "Imported"));
+        Assert.Equal(["something.txt"], Directory.GetFileSystemEntries(CarFolder).Select(Path.GetFileName));
     }
 
     [Fact]

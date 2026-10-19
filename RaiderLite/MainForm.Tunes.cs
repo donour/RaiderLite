@@ -28,7 +28,7 @@ public sealed partial class MainForm
     private Rom? RomOf(Revision revision) => _romRevisions.FirstOrDefault(kv => ReferenceEquals(kv.Value, revision)).Key;
 
     internal static string WhyLocked(Revision revision) =>
-        revision.Car.LockReasonOf(revision) == LockReason.Stock ? "it is the car's stock image" : "other revisions are based on it";
+        revision.Car.LockReasonOf(revision) == LockReason.First ? "it is where the car's history starts" : "other revisions are based on it";
 
     /// <summary>Makes open images of locked revisions read-only (and the others editable again).</summary>
     private void RefreshRevisionLocks()
@@ -207,22 +207,59 @@ public sealed partial class MainForm
     }
 
     /// <summary>New Car: a folder in the tune library whose revision 000 is a copy of the stock image.</summary>
-    internal void NewCar()
+    internal void NewCar() => CreateCar(import: false, from: null);
+
+    /// <summary>
+    /// Import Image: a new car whose history starts with any image, stock or not; by default the
+    /// open image <paramref name="from"/> (when it isn't a revision already).
+    /// </summary>
+    internal void ImportImage(Rom? from = null) => CreateCar(import: true, from: RevisionOf(from) == null ? from : null);
+
+    private void CreateCar(bool import, Rom? from)
     {
+        var caption = import ? "Import Image" : "New Car";
         var library = AppSettings.Current.TuneLibraryFolder;
-        using var dialog = new NewCarForm(ImageFileFilter, library);
+        using var dialog = new NewCarForm(ImageFileFilter, library, import, from?.FilePath);
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
-        byte[] image;
-        try
+
+        // The file as saved, with its date; or, when it is open with unsaved changes, those if wanted.
+        byte[]? image = null;
+        var created = DateTime.Now;
+        var open = _roms.FirstOrDefault(r => RevisionOf(r) == null && string.Equals(r.FilePath, dialog.ImagePath, StringComparison.OrdinalIgnoreCase));
+        if (open is { IsDirty: true })
         {
-            image = File.ReadAllBytes(dialog.ImagePath);
+            var with = new TaskDialogButton("&With the unsaved changes");
+            var saved = new TaskDialogButton("&As saved in the file");
+            var page = new TaskDialogPage
+            {
+                Caption = caption,
+                Heading = $"{open.FileName} has unsaved changes",
+                Text = "The car's first revision can be the image with the changes made since it was opened, or as it is in the file. The file itself isn't changed either way.",
+                Icon = TaskDialogIcon.Warning,
+                AllowCancel = true,
+                Buttons = { with, saved, TaskDialogButton.Cancel },
+            };
+            var answer = TaskDialog.ShowDialog(this, page);
+            if (answer == with)
+                image = (byte[])open.PrepareForSave(out _).Clone();
+            else if (answer != saved)
+                return;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        if (image == null)
         {
-            MessageBox.Show(this, ex.Message, "New Car", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
+            try
+            {
+                image = File.ReadAllBytes(dialog.ImagePath);
+                created = File.GetLastWriteTime(dialog.ImagePath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                MessageBox.Show(this, ex.Message, caption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
         }
+
         UseWaitCursor = true;
         var errors = new List<string>();
         var match = FindDefinitionMatches(AppSettings.Current.DefinitionFiles.ToList(), image, errors).FirstOrDefault();
@@ -230,29 +267,26 @@ public sealed partial class MainForm
         if (match.Info == null)
         {
             MessageBox.Show(this, $"No definition in the definition list matches {Path.GetFileName(dialog.ImagePath)}. Add its definition with Edit > Definition Manager first." +
-                (errors.Count > 0 ? "\n\n" + string.Join("\n", errors.Take(5)) : ""), "New Car", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                (errors.Count > 0 ? "\n\n" + string.Join("\n", errors.Take(5)) : ""), caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         var folder = Path.Combine(library, Car.CleanLabel(dialog.CarName));
         try
         {
-            if (Directory.Exists(folder) && Directory.EnumerateFileSystemEntries(folder).Any())
-            {
-                MessageBox.Show(this, $"The tune library already has a folder named {Path.GetFileName(folder)}. Choose another name.", "New Car",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-            Car.Create(folder, dialog.CarName, match.Info.Id.XmlId, dialog.ImagePath);
+            // The dialog checked the name is free; Create refuses a folder in use all the same.
+            Car.Create(folder, dialog.CarName, match.Info.Id.XmlId, image, Path.GetFileName(dialog.ImagePath), created, dialog.FirstLabel);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show(this, $"The car couldn't be created:\n\n{ex.Message}", "New Car", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, $"The car couldn't be created:\n\n{ex.Message}", caption, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
         _carsListed = true;
         ShowLeftPanel(tunes: true);
         _tunesPanel.ReloadCars(select: folder);
-        SetStatus($"Created {dialog.CarName} ({match.Info.Id.XmlId}) in {library}.");
+        SetStatus(import
+            ? $"Imported {Path.GetFileName(dialog.ImagePath)} as revision 000 of {dialog.CarName} ({match.Info.Id.XmlId}). Make new revisions from it to change it."
+            : $"Created {dialog.CarName} ({match.Info.Id.XmlId}) in {library}.");
     }
 
     /// <summary>Closes the open images of a revision, asking about unsaved changes; false if one stays open.</summary>

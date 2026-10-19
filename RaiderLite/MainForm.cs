@@ -189,6 +189,7 @@ public sealed partial class MainForm : Form
         file.DropDownItems.Add(new ToolStripSeparator());
         file.DropDownItems.Add(new ToolStripMenuItem("New &Revision...", null, async (_, _) => await NewRevisionAsync(), Keys.Control | Keys.Shift | Keys.N));
         file.DropDownItems.Add(new ToolStripMenuItem("New Ca&r...", null, (_, _) => NewCar()));
+        file.DropDownItems.Add(new ToolStripMenuItem("&Import Image as New Car...", null, (_, _) => ImportImage(SelectedRom)));
         file.DropDownItems.Add(new ToolStripSeparator());
         // Items that act on the selected image, and Close All, which needs any image open.
         ToolStripMenuItem[] imageItems =
@@ -1242,6 +1243,11 @@ public sealed partial class MainForm : Form
                 {
                     menu.Items.Add("New &Revision...", null, async (_, _) => await NewRevisionAsync(revision));
                     menu.Items.Add("Show in &Tunes", null, (_, _) => ShowRevisionInTunes(rom));
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                else
+                {
+                    menu.Items.Add("&Import as New Car...", null, (_, _) => ImportImage(rom));
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("&Save", null, (_, _) => SaveRom(rom, false));

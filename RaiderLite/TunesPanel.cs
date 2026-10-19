@@ -22,6 +22,7 @@ internal sealed class TunesPanel : UserControl
     private readonly Label _message = new() { Dock = DockStyle.Top, AutoSize = false, Height = 80, UseMnemonic = false };
     private readonly Button _libraryButton = new() { Text = "Choose Library Folder...", AutoSize = true, Dock = DockStyle.Top };
     private readonly Button _newCarButton = new() { Text = "New Car...", AutoSize = true, Dock = DockStyle.Top };
+    private readonly Button _importButton = new() { Text = "Import Image as New Car...", AutoSize = true, Dock = DockStyle.Top };
     private readonly System.Windows.Forms.Timer _filterTimer = new() { Interval = 250 };
     private readonly HashSet<int> _expanded = [];
     private readonly RevisionCommands _commands;
@@ -57,10 +58,12 @@ internal sealed class TunesPanel : UserControl
 
         _messagePanel.Controls.Add(_libraryButton);
         _messagePanel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = Px(6) });
+        _messagePanel.Controls.Add(_importButton);
         _messagePanel.Controls.Add(_newCarButton);
         _messagePanel.Controls.Add(_message);
         _libraryButton.Click += (_, _) => ChooseLibraryFolder();
         _newCarButton.Click += (_, _) => _main.NewCar();
+        _importButton.Click += (_, _) => _main.ImportImage(_main.CurrentRom);
 
         Controls.Add(_split);
         Controls.Add(_messagePanel);
@@ -460,6 +463,7 @@ internal sealed class TunesPanel : UserControl
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("New &Revision...", null, async (_, _) => await _main.NewRevisionAsync(SelectedRevision)).Enabled = SelectedRevision != null;
             menu.Items.Add("New Ca&r...", null, (_, _) => _main.NewCar());
+            menu.Items.Add("&Import Image as New Car...", null, (_, _) => _main.ImportImage(_main.CurrentRom));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("&Refresh", null, (_, _) =>
             {

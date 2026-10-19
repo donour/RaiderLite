@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace RaiderLite.Core.Tunes;
 
 /// <summary>Why a revision can't be edited in place.</summary>
-public enum LockReason { None, Stock, HasChildren }
+public enum LockReason { None, First, HasChildren }
 
 /// <summary>Whether a revision's image is still the one RaiderLite last saved or imported.</summary>
 public enum ImageState { Ok, Missing, Changed }

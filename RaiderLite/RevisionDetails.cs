@@ -326,7 +326,7 @@ internal sealed class RevisionDetails : UserControl
         _compareOther = parent;
         _hints = true;
         if (parent == null)
-            FillChanges(null, revision.Number == 0 ? "Stock: nothing to compare with." : "Not based on another revision.");
+            FillChanges(null, revision.Number == 0 ? "The first revision: nothing to compare with." : "Not based on another revision.");
         else if (car.IsNoChange(revision))
             FillChanges(null, $"No change from {parent.Number:000}: the image is identical.");
         else if (session.Problem != null)
@@ -495,7 +495,7 @@ internal sealed class RevisionDetails : UserControl
         {
             car.LockReasonOf(r) switch
             {
-                LockReason.Stock => "Locked: stock image",
+                LockReason.First => "Locked: first revision",
                 LockReason.HasChildren => "Locked: revisions are based on it",
                 _ => "Editable",
             },

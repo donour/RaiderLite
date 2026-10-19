@@ -102,9 +102,9 @@ Some bullets are empty (`* `), and one file starts with a `TODO:` line. The diag
 |---|---|
 | **Library** | A folder chosen in Settings (e.g. `Documents\Tunes`). Each subfolder that RaiderLite manages is a car. |
 | **Car** | One ECU's calibration history, e.g. "2011 Evora NA", fixed to one definition (`T6-V00BU`). |
-| **Revision** | One complete image plus its notes and files. It has a number (`037`), a date, a label and a parent. Revision `000` is stock. |
+| **Revision** | One complete image plus its notes and files. It has a number (`037`), a date, a label and a parent. Revision `000` is where the history starts: usually stock, or an imported image. |
 | **Parent** | The revision it was based on. Two revisions with the same parent are a branch. |
-| **Locked** | Stock, or other revisions are based on it. A locked revision opens read-only. |
+| **Locked** | Revision `000`, or other revisions are based on it. A locked revision opens read-only. |
 | **No change** | A revision whose image is identical to its parent's: a duplicate kept for its notes, files and date. Shown greyed with a "no change" tag. Computed from the hashes, not stored. |
 | **Rejected** | A verdict with a reason ("too lean"). Rejected revisions are drawn struck through and can be hidden. |
 | **Hidden** | Folded away: backups and abandoned variants. Still on disk, still comparable. |
@@ -287,6 +287,11 @@ file made with your usual tool can be dropped onto the revision's files like any
 - **Settings > Tune library:** the folder. The Tunes tab lists the cars in a drop-down at the top.
 - **New Car…** asks for a name and the stock image. It copies the image into `000 … Stock` and
   reads the definition from it.
+- **Import Image as New Car…** (File menu, the Tunes ⋯ menu, and an open image's right-click
+  menu) starts a history from any image, stock or not: it asks for the image (the open one by
+  default), the car name and the first revision's label (the file name by default), and copies
+  the image into `000`, dated by the file. If that image is open with unsaved changes, `000` can
+  have them or be the file as saved; the file itself is never changed.
 - **Import…** converts an old-style folder (see below).
 - **Opening a loose image** that isn't in a car works as it does today. If its ROM ID matches a
   car, the info bar offers "Add to 2011 Evora NA as a new revision".
