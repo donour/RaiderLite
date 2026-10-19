@@ -1,3 +1,4 @@
+using System.Globalization;
 using RaiderLite.Core.Definitions;
 using RaiderLite.Core.Model;
 using RaiderLite.Core.Tunes;
@@ -52,12 +53,14 @@ internal sealed class CarRegistry
 internal sealed record RevisionChanges(ImageComparison? Comparison, string? Problem);
 
 /// <summary>
-/// A car shown in the Tunes panel, with what each revision changed. The changes need the car's
-/// definition, loaded once as a template, and are worked out off the UI thread.
+/// A car shown in the Tunes panel, with what each revision changed and its notes (kept for
+/// searching). The changes need the car's definition, loaded once as a template, and are worked
+/// out off the UI thread.
 /// </summary>
 internal sealed class CarSession(Car car)
 {
     private Dictionary<int, RevisionChanges> _changes = [];
+    private readonly Dictionary<int, string> _notes = car.Revisions.ToDictionary(r => r.Number, ReadNotes);
     private int _generation;
 
     public Car Car { get; } = car;
@@ -71,6 +74,41 @@ internal sealed class CarSession(Car car)
     public bool Loaded { get; private set; }
 
     public RevisionChanges? ChangesOf(Revision revision) => _changes.GetValueOrDefault(revision.Number);
+
+    /// <summary>A revision's notes as last read; "" if they couldn't be read.</summary>
+    public string NotesOf(Revision revision) => _notes.GetValueOrDefault(revision.Number, "");
+
+    /// <summary>Reads a revision's notes again, after they were saved or the revision was added.</summary>
+    public void ReloadNotes(Revision revision)
+    {
+        if (ReferenceEquals(revision.Car, Car))
+            _notes[revision.Number] = ReadNotes(revision);
+    }
+
+    /// <summary>A revision's notes from its folder; "" if they can't be read.</summary>
+    public static string ReadNotes(Revision revision)
+    {
+        try
+        {
+            return revision.Car.ReadNotes(revision);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="word"/> is in a revision's label, number, folder, rejection reason,
+    /// origin or notes, or names a table it changed.
+    /// </summary>
+    public bool Matches(Revision revision, string word)
+    {
+        bool Has(string? s) => s != null && s.Contains(word, StringComparison.CurrentCultureIgnoreCase);
+        return Has(revision.Label) || Has(revision.Number.ToString("000", CultureInfo.InvariantCulture)) || Has(revision.Folder)
+               || Has(revision.Rejected) || Has(revision.ImportedFrom) || Has(NotesOf(revision))
+               || ChangesOf(revision)?.Comparison?.Tables.Any(t => Has(t.Table.Name)) == true;
+    }
 
     /// <summary>
     /// Works out every revision's changes (loading the template first if needed). Returns false

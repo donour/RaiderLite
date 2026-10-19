@@ -404,11 +404,13 @@ those parents by hand in the review window.
 
 | Piece | Job |
 |---|---|
-| `TunesPanel` (UserControl) | Car drop-down, filter, timeline, details splitter. |
+| `TunesPanel` (UserControl) | Car drop-down, filter, timeline, details splitter; the timeline's menu. |
+| `CarSession` | The shown car: each revision's changes (worked out off the UI thread) and notes; search matching. |
+| `RevisionCommands` | Delete, rename, reject, copy changelog, add files: the prompts, confirmations and error messages. They report whether anything changed; the panel shows the result. |
 | `RevisionTimeline` | Owner-drawn list: lanes, icons, folded rows, multi-select for Compare. |
 | `RevisionDetails` | Notes box, changed-tables list with ⚠, files list (drag and drop), buttons. |
 | `NewRevisionForm`, `ImportTunesForm` (review grid with timeline preview), `NewCarForm` | Dialogs, on `DialogBase`. |
-| `MainForm` | Tunes and Tables tabs on the left panel; `OpenRevisionAsync`; locked-revision info bar; title and breadcrumb; reopening table windows on a new revision. |
+| `MainForm` (tune-manager members in `MainForm.Tunes.cs`) | Tunes and Tables tabs on the left panel; `OpenRevisionAsync`; locked-revision info bar; title and breadcrumb; reopening table windows on a new revision. |
 | `Rom.IsReadOnly` | Enforced in Core (cell edits refused), so `TableForm`, the grid, paste and the ribbon all respect it. An edit attempt raises an event that MainForm answers with the New Revision prompt. |
 | `RibbonBar` | New Revision in the Image group (Ctrl+Shift+N). |
 | `AppSettings` | `TuneLibrary`, `LastCar`, show-hidden toggle. |
