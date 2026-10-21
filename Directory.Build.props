@@ -6,7 +6,7 @@
     version differs only in a fourth field is not treated as an upgrade.
   -->
   <PropertyGroup>
-    <Version>0.2.0.0</Version>
+    <Version>0.2.1.0</Version>
     <Product>RaiderLite</Product>
     <Company>Donour Sizemore</Company>
     <Copyright>Copyright © 2026 Donour Sizemore</Copyright>

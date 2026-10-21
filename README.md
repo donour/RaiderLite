@@ -66,7 +66,7 @@ Each release lists the installer's SHA-256 checksum and includes it as a `.sha25
 download in PowerShell:
 
 ```powershell
-Get-FileHash .\RaiderLite-0.2.0-x64.msi -Algorithm SHA256
+Get-FileHash .\RaiderLite-0.2.1-x64.msi -Algorithm SHA256
 ```
 
 The hash shown must match the one on the release page.
@@ -113,8 +113,8 @@ Pushing a version tag builds the installer on GitHub Actions and attaches it, wi
 a GitHub release:
 
 ```powershell
-git tag -a v0.2.0 -m "RaiderLite 0.2.0"
-git push origin v0.2.0
+git tag -a v0.2.1 -m "RaiderLite 0.2.1"
+git push origin v0.2.1
 ```
 
 The installer's version comes from the tag (`v1.2.3` or `v1.2.3.4`). Windows compares only the
