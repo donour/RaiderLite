@@ -9,6 +9,11 @@
     <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
   </ItemGroup>
 
+  <!-- The help pages, read by HelpLibrary.FromAssembly. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Help\*.md" LogicalName="Help/%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <!-- Ship the GPL text next to the executable (and so in the installer). -->
   <ItemGroup>
     <None Include="..\LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

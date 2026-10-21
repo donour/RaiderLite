@@ -9,6 +9,7 @@ public sealed class RomPickerForm : DialogBase
 
     public RomPickerForm(DefinitionDocument doc, string imageName) : base("Choose ROM Definition")
     {
+        HelpTopic = "definitions#no-match";
         FormBorderStyle = FormBorderStyle.Sizable;
         Size = new Size(520, 380);
         foreach (var rom in doc.Roms)

@@ -143,6 +143,12 @@ public sealed class TableForm : Form
 
     public Table Table { get; }
 
+    /// <summary>The help page for F1: about the graph, a switch, a single value or editing.</summary>
+    public string HelpTopic => _graph?.ContainsFocus == true ? "graphs"
+        : Table is TableSwitch ? "table-windows#switches"
+        : _scalar != null ? "table-windows#single-values"
+        : "editing";
+
     /// <summary>When the window was created (to tell a double-click from two single clicks).</summary>
     public DateTime OpenedAt { get; } = DateTime.UtcNow;
 

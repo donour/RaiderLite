@@ -284,7 +284,10 @@ public sealed partial class MainForm : Form
         _menu.MdiWindowListItem = window;
 
         var help = new ToolStripMenuItem("&Help");
-        help.DropDownItems.Add(new ToolStripMenuItem("&Keyboard Shortcuts", null, (_, _) => ShowShortcuts()));
+        // F1 itself is handled in ProcessCmdKey: it opens the page about what has the focus.
+        help.DropDownItems.Add(new ToolStripMenuItem("RaiderLite &Help", null, (_, _) => HelpForm.ShowTopic("overview")) { ShortcutKeyDisplayString = "F1" });
+        help.DropDownItems.Add(new ToolStripMenuItem("&Keyboard Shortcuts", null, (_, _) => HelpForm.ShowTopic("keyboard-shortcuts")));
+        help.DropDownItems.Add(new ToolStripSeparator());
         help.DropDownItems.Add(new ToolStripMenuItem("&About RaiderLite", null, (_, _) => ShowAbout()));
 
         _menu.Items.AddRange([file, edit, view, tools, window, help]);
@@ -330,29 +333,27 @@ public sealed partial class MainForm : Form
         Toolbar.UpdateState(SelectedRom);
     }
 
-    private void ShowShortcuts()
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        const string text = """
-            In a table:
-              Type a number          start entering a value; Enter sets the selected cells
-              +  /  _                increment / decrement by the coarse step
-              Ctrl+Up / Ctrl+Down    increment / decrement by the coarse step
-              ]  /  [                increment / decrement by the fine step
-              Ctrl+Shift+Up / Down   increment / decrement by the fine step
-              *  or  Ctrl+Enter      multiply selected cells by the value box
-              Shift+I / V / H        interpolate / vertically / horizontally
-              Ctrl+C / Ctrl+V        copy selection / paste (RomRaider and spreadsheet formats)
-              Ctrl+Z / Ctrl+Y        undo / redo
-              Ctrl+G                 show / hide the graph (curves and maps)
-              Ctrl+A                 select all cells (click the top-left corner for data only)
+        // Table windows pass their keys up here too.
+        if (keyData == Keys.F1)
+        {
+            HelpForm.ShowTopic(HelpContext());
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
 
-            Main window:
-              Ctrl+O  open image     Ctrl+S  save     Ctrl+Shift+S  save as
-              Ctrl+F  filter tables  Enter in the tree opens the selected table
-              Click a table in the tree to open it, click it again to close it
-              Esc closes the active table window
-            """;
-        MessageBox.Show(this, text, "Keyboard Shortcuts", MessageBoxButtons.OK, MessageBoxIcon.None);
+    /// <summary>The help page about what has the focus (or is in front).</summary>
+    private string HelpContext()
+    {
+        if (_tunesPanel.Visible && _tunesPanel.ContainsFocus)
+            return "tunes";
+        if (_treePanel.ContainsFocus)
+            return "table-list";
+        if (ActiveMdiChild is TableForm form)
+            return form.HelpTopic;
+        return _tunesPanel.Visible ? "tunes" : "overview";
     }
 
     private void ShowAbout()
@@ -1334,7 +1335,7 @@ public sealed partial class MainForm : Form
 
     public void ShowTableProperties(Table table)
     {
-        using var dialog = new PropertiesForm($"Table Properties - {table.Name}", PropertiesForm.DescribeTable(table), table.Description);
+        using var dialog = new PropertiesForm($"Table Properties - {table.Name}", PropertiesForm.DescribeTable(table), table.Description) { HelpTopic = "table-list#table-properties" };
         dialog.ShowDialog(this);
     }
 
@@ -1343,7 +1344,7 @@ public sealed partial class MainForm : Form
         if (rom == null)
             return;
         var notes = rom.Warnings.Count == 0 ? "No load warnings." : "Load warnings:" + Environment.NewLine + string.Join(Environment.NewLine, rom.Warnings);
-        using var dialog = new PropertiesForm($"Image Properties - {rom.FileName}", PropertiesForm.DescribeRom(rom), notes);
+        using var dialog = new PropertiesForm($"Image Properties - {rom.FileName}", PropertiesForm.DescribeRom(rom), notes) { HelpTopic = "images#properties" };
         dialog.ShowDialog(this);
     }
 

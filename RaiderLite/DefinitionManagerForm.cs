@@ -7,6 +7,7 @@ public sealed class DefinitionManagerForm : DialogBase
 
     public DefinitionManagerForm(IEnumerable<string> files) : base("Definition Manager")
     {
+        HelpTopic = "definitions#the-definition-manager";
         FormBorderStyle = FormBorderStyle.Sizable;
         Size = new Size(700, 400);
         MinimumSize = new Size(450, 250);

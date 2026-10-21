@@ -11,6 +11,7 @@ public sealed class NewRevisionForm : DialogBase
 
     public NewRevisionForm(Car car, Revision basedOn) : base("New Revision")
     {
+        HelpTopic = "tunes#new-revisions";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;

@@ -39,6 +39,9 @@ public static class IconFont
     public const char NewRevision = '\uE8F4';
     public const char Folder = '\uE8B7';
     public const char More = '\uE712';
+    public const char Back = '\uE72B';
+    public const char Forward = '\uE72A';
+    public const char Help = '\uE897';
 
     private static readonly string? FamilyName = FindFamily();
     private static readonly Dictionary<(char, int, int), Bitmap> Cache = [];

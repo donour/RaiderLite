@@ -102,6 +102,9 @@ public sealed class AppSettings
     public bool WindowMaximized { get; set; }
     public int TreeWidth { get; set; } = 320;
 
+    /// <summary>Where the help window was last closed; empty for the default placement.</summary>
+    public Rectangle HelpWindowBounds { get; set; }
+
     public static void Load()
     {
         try

@@ -18,6 +18,11 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- The app's help pages, checked by HelpTests (links, anchors, parsing). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\RaiderLite\Help\*.md" LogicalName="Help/%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\RaiderLite.Core\RaiderLite.Core.csproj" />
   </ItemGroup>

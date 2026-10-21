@@ -58,6 +58,16 @@ public sealed class CompareImagesForm : Form
         Shown += (_, _) => Compare();
     }
 
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.F1)
+        {
+            HelpForm.ShowTopic("comparing#compare-images");
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
     private void Compare()
     {
         if (_left.SelectedItem is not Rom a || _right.SelectedItem is not Rom b)

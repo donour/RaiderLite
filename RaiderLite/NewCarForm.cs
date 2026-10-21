@@ -18,6 +18,7 @@ public sealed class NewCarForm : DialogBase
 
     public NewCarForm(string imageFilter, string library, bool import = false, string? image = null) : base(import ? "Import Image" : "New Car")
     {
+        HelpTopic = "tunes#new-car";
         _import = import;
         _library = library;
         FormBorderStyle = FormBorderStyle.FixedDialog;

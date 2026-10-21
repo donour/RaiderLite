@@ -97,7 +97,7 @@ internal sealed class RevisionCommands(IWin32Window owner, MainForm main)
     /// <summary>Asks for a new label (the folder is renamed to match). False if it wasn't changed.</summary>
     public bool Rename(Revision revision)
     {
-        using var prompt = new TextPromptForm("Rename Revision", $"New label for {revision.Number:000} (its folder is renamed to match):", revision.Label);
+        using var prompt = new TextPromptForm("Rename Revision", $"New label for {revision.Number:000} (its folder is renamed to match):", revision.Label) { HelpTopic = "tunes#revision-commands" };
         if (prompt.ShowDialog(owner) != DialogResult.OK || prompt.Value == revision.Label)
             return false;
         main.RelabelRevision(revision, prompt.Value);
@@ -107,7 +107,7 @@ internal sealed class RevisionCommands(IWin32Window owner, MainForm main)
     /// <summary>Asks why the revision is rejected and marks it so. False if the user cancelled.</summary>
     public bool Reject(Revision revision)
     {
-        using var prompt = new TextPromptForm("Reject Revision", $"Why is {revision} rejected? (e.g. too lean)", "");
+        using var prompt = new TextPromptForm("Reject Revision", $"Why is {revision} rejected? (e.g. too lean)", "") { HelpTopic = "tunes#revision-commands" };
         if (prompt.ShowDialog(owner) != DialogResult.OK)
             return false;
         Change(revision, () => revision.Car.SetRejected(revision, prompt.Value.Length > 0 ? prompt.Value : "rejected"));

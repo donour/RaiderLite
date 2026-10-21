@@ -98,7 +98,7 @@ RaiderLite.slnx
 3. Checksums, compare, undo stack, properties dialogs, settings/definition manager. — done (first pass)
 
 ## Status / notes
-- `dotnet test` runs 280 tests, all self-contained (inline definitions and synthetic images), so they
+- `dotnet test` runs 322 tests, all self-contained (inline definitions and synthetic images), so they
   run the same locally and on GitHub Actions.
 - Settings live in `%APPDATA%\RaiderLite\settings.json`; `RAIDERLITE_SETTINGS` overrides the path.
 - Image paths passed on the command line (or dropped on the window) are opened.
@@ -120,6 +120,13 @@ RaiderLite.slnx
   table a column / row as wide / tall as it needs (shrunk in proportion when they don't fit);
   Cascade offsets windows at their own sizes. Single-value windows keep their fixed size. Code:
   `RaiderLite.Core/Layout/WindowArrangement.cs` (tested in `WindowArrangementTests`).
+- Help (Help menu, F1): one Markdown page per topic in `RaiderLite/Help/NN-id.md`, embedded in
+  the app; the number orders the contents and `id` names the page in links (`[text](id#anchor)`).
+  `RaiderLite.Core/Help` parses the small Markdown subset it uses (headings, lists, tables, notes,
+  code, bold, inline code, links); `HelpRtf` renders a page as RTF and `HelpForm` shows it with
+  contents, search and back/forward. F1 picks the page from the focus (`MainForm.HelpContext`,
+  `TableForm.HelpTopic`); dialogs set `DialogBase.HelpTopic`, which also shows the title bar's ?
+  button. `HelpTests` checks that every link and every page the app opens exists.
 - Known definition defect: `T4E090_defs.xml`, table "inj: afr base", Lambda scaling has
   `to_byte="((x14.6)-5)*20"` (missing `*`). RaiderLite warns and approximates.
 

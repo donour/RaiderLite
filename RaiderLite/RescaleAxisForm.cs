@@ -54,6 +54,7 @@ public sealed class RescaleAxisForm : DialogBase
 
     public RescaleAxisForm(Table table, Table1D? initialAxis) : base("Rescale Axis")
     {
+        HelpTopic = "rescale-axis#the-dialog";
         _table = table;
         _axes = table.Axes.Where(a => !a.IsStaticDataTable).ToList();
         FormBorderStyle = FormBorderStyle.FixedDialog;

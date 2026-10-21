@@ -22,6 +22,7 @@ public sealed class SettingsForm : DialogBase
 
     public SettingsForm(AppSettings settings) : base("Settings")
     {
+        HelpTopic = "settings";
         _settings = settings;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         AutoSize = true;

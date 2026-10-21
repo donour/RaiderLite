@@ -42,6 +42,39 @@ public abstract class DialogBase : Form
     /// <summary>The OK (or Close) button.</summary>
     protected Button OkButton { get; }
 
+    /// <summary>
+    /// The help page about this dialog ("id" or "id#anchor"): F1 and the title bar's ? button
+    /// open it. Null for none.
+    /// </summary>
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public string? HelpTopic
+    {
+        get;
+        set
+        {
+            field = value;
+            HelpButton = value != null;
+        }
+    }
+
+    protected override void OnHelpButtonClicked(System.ComponentModel.CancelEventArgs e)
+    {
+        // Open the page rather than entering the "click a control" help mode.
+        e.Cancel = true;
+        if (HelpTopic != null)
+            HelpForm.ShowTopic(HelpTopic);
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.F1 && HelpTopic != null)
+        {
+            HelpForm.ShowTopic(HelpTopic);
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
     protected virtual void OnOk(EventArgs e)
     {
     }
