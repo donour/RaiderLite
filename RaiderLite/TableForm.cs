@@ -39,6 +39,10 @@ public sealed class TableForm : Form
     private readonly ToolStripMenuItem _displayPercent = new("&Percent difference");
     private readonly ToolStripMenuItem _compareToCurrent = new("Compare to &current values");
     private readonly ToolStripMenuItem _compareToOriginalValues = new("Compare to &original values");
+    private readonly ToolStripMenuItem _compareInterpolate = new("&Interpolate at this table's axis values")
+    {
+        ToolTipText = "Compare each cell with the value the other table would look up at this table's breakpoints",
+    };
     private Table? _comparedTable;
     private bool _refreshPending;
 
@@ -225,12 +229,14 @@ public sealed class TableForm : Form
         _compareOff.Click += (_, _) => SetCompare(null);
         _compareOriginal.Click += (_, _) => CompareToOriginal();
         compareMenu.DropDownItems.AddRange([_compareOff, _compareOriginal, _compareRomMenu, new ToolStripSeparator(),
-            _displayAbsolute, _displayPercent, new ToolStripSeparator(), _compareToCurrent, _compareToOriginalValues]);
+            _displayAbsolute, _displayPercent, new ToolStripSeparator(), _compareToCurrent, _compareToOriginalValues,
+            new ToolStripSeparator(), _compareInterpolate]);
         compareMenu.DropDownOpening += (_, _) => UpdateCompareMenu();
         _displayAbsolute.Click += (_, _) => SetCompareDisplay(CompareDisplay.Absolute);
         _displayPercent.Click += (_, _) => SetCompareDisplay(CompareDisplay.Percent);
         _compareToCurrent.Click += (_, _) => SetCompareValueType(CompareValueType.Bin);
         _compareToOriginalValues.Click += (_, _) => SetCompareValueType(CompareValueType.Original);
+        _compareInterpolate.Click += (_, _) => SetInterpolateCompare(!Table.InterpolateCompare);
 
         var viewMenu = new ToolStripMenuItem("&View");
         _graphMenuItem.Click += (_, _) => ToggleGraph();
@@ -259,7 +265,8 @@ public sealed class TableForm : Form
         _titleLabel.Font = UiFonts.Bold;
         _valueLabel.Text = Table.CompareTable == null
             ? $"Values: {units} ▾" + (Table.ReadOnlyReason is { } readOnly ? $"   ({readOnly})" : "")
-            : $"Comparing to {DescribeCompare()} - {(_grid?.CompareDisplay == CompareDisplay.Percent ? "percent" : "absolute")} difference";
+            : $"Comparing to {DescribeCompare()} - {(_grid?.CompareDisplay == CompareDisplay.Percent ? "percent" : "absolute")} difference" +
+              (InterpolatingCompare ? ", interpolated at this table's axis values" : "");
 
         switch (Table)
         {
@@ -1074,6 +1081,8 @@ public sealed class TableForm : Form
         // Showing changes always compares against original values.
         bool otherRom = _comparedTable != null && !ReferenceEquals(_comparedTable, Table);
         _compareToCurrent.Enabled = _compareToOriginalValues.Enabled = otherRom;
+        _compareInterpolate.Checked = Table.InterpolateCompare;
+        _compareInterpolate.Enabled = _comparedTable != null && Table is Table2D or Table3D;
 
         _compareRomMenu.DropDownItems.Clear();
         foreach (var rom in _main.OpenRoms.Where(r => !ReferenceEquals(r, Table.Rom)))
@@ -1138,6 +1147,20 @@ public sealed class TableForm : Form
         if (_comparedTable != null)
             Table.RefreshCompare();
         _grid?.RefreshValues();
+    }
+
+    /// <summary>Whether the data is being compared with values looked up at this table's axes.</summary>
+    private bool InterpolatingCompare => _comparedTable != null && Table.InterpolateCompare && Table is Table2D or Table3D;
+
+    private void SetInterpolateCompare(bool interpolate)
+    {
+        Table.InterpolateCompare = interpolate;
+        if (_comparedTable != null)
+            Table.RefreshCompare();
+        UpdateLabels();
+        _grid?.AutoSizeCells();
+        _grid?.RefreshValues();
+        _graph?.RefreshData();
     }
 
     /// <summary>Re-reads labels and sizes after a settings change.</summary>

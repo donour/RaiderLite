@@ -27,9 +27,27 @@ The rest of the **Compare** menu controls how differences are shown:
 | **Percent difference** | Shows the difference as a percentage. |
 | **Compare to current values** | Compares with the other table's values as they are now, including unsaved changes. |
 | **Compare to original values** | Compares with the other table's values as they were when its image was opened. |
+| **Interpolate at this table's axis values** | Compares each cell with the value the other table would look up at this table's breakpoints (see below). |
 
 The caption under the data says what the table is being compared with. While comparing, the
 shading follows the size of each difference, and equal cells are grey.
+
+## Comparing tables with different breakpoints {#interpolated-compare}
+
+Two versions of a curve or map can have the same size but different axis breakpoints, so the
+cell in the same position means a different operating point in each. Choose **Compare >
+Interpolate at this table's axis values** to compare what the ECU would actually look up: for
+each cell, RaiderLite finds this table's axis values on the other table's axes and interpolates
+the other table's values there (linearly for curves, bilinearly for maps). Points beyond the
+other table's first or last breakpoint use the value at that end, as the ECU does. Each cell then
+shows this table's value minus the value the other table would give at the same point.
+
+The axis cells are still compared position by position, so they show which breakpoints moved.
+Axes are matched by their raw values, so both tables' axes should use the same scaling. Static
+(labelled) axes have no values to look up, so they are matched by position.
+
+This also works with **Show Changes**: after you edit or rescale an axis, it shows how the
+values looked up at the new breakpoints differ from what the original table gave there.
 
 ## Compare Images {#compare-images}
 

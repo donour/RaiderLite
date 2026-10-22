@@ -145,6 +145,87 @@ public class EditingTests
     }
 
     [Fact]
+    public void BracketFindsBreakpointsEitherSide()
+    {
+        double[] up = [10, 20, 40];
+        Assert.Equal((0, 0, 0.0), Table.Bracket(up, 5));
+        Assert.Equal((1, 1, 0.0), Table.Bracket(up, 20));
+        Assert.Equal((1, 2, 0.25), Table.Bracket(up, 25));
+        Assert.Equal((2, 2, 0.0), Table.Bracket(up, 99));
+        double[] down = [40, 20, 10];
+        Assert.Equal((0, 0, 0.0), Table.Bracket(down, 50));
+        Assert.Equal((1, 2, 0.5), Table.Bracket(down, 15));
+        Assert.Equal((2, 2, 0.0), Table.Bracket(down, 0));
+        Assert.Equal((0, 0, 0.0), Table.Bracket([7.0], 3));
+    }
+
+    [Fact]
+    public void InterpolatedCompareLooksUpAtThisTablesAxis()
+    {
+        var a = Load();
+        var b = Load();
+        var ca = (Table2D)a.GetTable("Curve")!;   // axis 40, 80, 120, 160; data 10..40
+        var cb = (Table2D)b.GetTable("Curve")!;
+        for (int i = 0; i < 4; i++)
+            cb.Axis.Cells[i].SetBinValue(60 + 40 * i);
+        ca.SetCompareTable(cb);
+        Assert.All(ca.Cells, c => Assert.Equal(0, c.CompareValue));
+
+        ca.InterpolateCompare = true;
+        ca.RefreshCompare();
+        // 40 is below b's axis (held at its first value); 80 is halfway between 60 and 100, ...
+        Assert.Equal([10.0, 15, 25, 35], ca.Cells.Select(c => c.CompareToValue));
+        Assert.Equal([0.0, 5, 5, 5], ca.Cells.Select(c => c.CompareValue));
+        // The axis itself is still compared position by position.
+        Assert.Equal(40 - 60, ca.Axis.Cells[0].CompareValue);
+    }
+
+    [Fact]
+    public void InterpolatedCompareOfMapIsBilinear()
+    {
+        var a = Load();
+        var b = Load();
+        var ma = (Table3D)a.GetTable("Map")!;   // X 1, 2, 3; Y 10, 20; data[x, y] = 3y + x
+        var mb = (Table3D)b.GetTable("Map")!;
+        ma.InterpolateCompare = true;
+        ma.SetCompareTable(mb);
+        Assert.All(ma.DataCells, c => Assert.Equal(0, c.CompareValue));
+
+        for (int i = 0; i < 3; i++)
+            mb.XAxis.Cells[i].SetBinValue(2 * i);
+        mb.YAxis.Cells[1].SetBinValue(30);
+        ma.RefreshCompare();
+        Assert.Equal(0.5, ma.Data3D[0, 0].CompareToValue);  // x 1 of 0..2, y 10 = first row
+        Assert.Equal(3.0, ma.Data3D[2, 1].CompareToValue);  // x 3 of 2..4, y 20 of 10..30
+        Assert.Equal(5 - 3.0, ma.Data3D[2, 1].CompareValue);
+    }
+
+    [Fact]
+    public void InterpolatedChangesShowWhatAnAxisEditDoesToLookups()
+    {
+        var curve = (Table2D)Load().GetTable("Curve")!;
+        curve.InterpolateCompare = true;
+        curve.Axis.Cells[1].SetBinValue(100);   // was 80: halfway to 120 in the original
+        curve.CompareToOriginal();
+        Assert.Equal(25, curve.Cells[1].CompareToValue);
+        Assert.Equal(20 - 25, curve.Cells[1].CompareValue);
+        Assert.Equal(0, curve.Cells[2].CompareValue);
+    }
+
+    [Fact]
+    public void InterpolatedCompareWithStaticAxisGoesByPosition()
+    {
+        var a = Load();
+        var b = Load();
+        var sa = (Table2D)a.GetTable("StaticCurve")!;
+        var sb = (Table2D)b.GetTable("StaticCurve")!;
+        sb.Cells[1].SetBinValue(9);
+        sa.InterpolateCompare = true;
+        sa.SetCompareTable(sb);
+        Assert.Equal([-2.0, 9, 5], sa.Cells.Select(c => c.CompareToValue));
+    }
+
+    [Fact]
     public void CopyTableAndPasteBackIsNoChange()
     {
         var rom = Load();

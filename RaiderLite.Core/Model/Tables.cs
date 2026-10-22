@@ -103,7 +103,19 @@ public class Table2D : Table
         if (!IsCompatibleWith(other))
             return;
         var o = (Table2D)other;
-        CopyCompareValues(Cells, o.Cells, CompareValueType);
+        if (InterpolateCompare && _axis.Cells.Length == Cells.Length)
+        {
+            var (mine, theirs) = LookupAxes(_axis, o._axis, CompareValueType);
+            for (int i = 0; i < Cells.Length; i++)
+            {
+                var (lo, hi, t) = Bracket(theirs, mine[i]);
+                Cells[i].CompareToValue = Lerp(CompareSource(o.Cells[lo], CompareValueType), CompareSource(o.Cells[hi], CompareValueType), t);
+            }
+        }
+        else
+        {
+            CopyCompareValues(Cells, o.Cells, CompareValueType);
+        }
         _axis.CompareValueType = CompareValueType;
         CopyCompareValues(_axis.Cells, o._axis.Cells, CompareValueType);
         _axis.CalcCellRanges();
@@ -304,13 +316,29 @@ public class Table3D : Table
         if (!IsCompatibleWith(other))
             return;
         var o = (Table3D)other;
-        for (int x = 0; x < _data.GetLength(0); x++)
+        int sizeX = _data.GetLength(0), sizeY = _data.GetLength(1);
+        if (InterpolateCompare && _xAxis.Cells.Length == sizeX && _yAxis.Cells.Length == sizeY)
         {
-            for (int y = 0; y < _data.GetLength(1); y++)
+            // Bilinear: along X on the two rows either side, then between those along Y.
+            var (mineX, theirX) = LookupAxes(_xAxis, o._xAxis, CompareValueType);
+            var (mineY, theirY) = LookupAxes(_yAxis, o._yAxis, CompareValueType);
+            var rows = mineY.Select(v => Bracket(theirY, v)).ToArray();
+            double Theirs(int x, int y) => CompareSource(o._data[x, y], CompareValueType);
+            for (int x = 0; x < sizeX; x++)
             {
-                var theirs = o._data[x, y];
-                _data[x, y].CompareToValue = CompareValueType == CompareValueType.Bin ? theirs.BinValue : theirs.OriginalValue;
+                var (x0, x1, tx) = Bracket(theirX, mineX[x]);
+                for (int y = 0; y < sizeY; y++)
+                {
+                    var (y0, y1, ty) = rows[y];
+                    _data[x, y].CompareToValue = Lerp(Lerp(Theirs(x0, y0), Theirs(x1, y0), tx), Lerp(Theirs(x0, y1), Theirs(x1, y1), tx), ty);
+                }
             }
+        }
+        else
+        {
+            for (int x = 0; x < sizeX; x++)
+                for (int y = 0; y < sizeY; y++)
+                    _data[x, y].CompareToValue = CompareSource(o._data[x, y], CompareValueType);
         }
         foreach (var (mine, theirs) in new[] { (_xAxis, o._xAxis), (_yAxis, o._yAxis) })
         {

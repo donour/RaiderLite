@@ -123,6 +123,14 @@ public abstract class Table
 
     public CompareValueType CompareValueType { get; set; } = CompareValueType.Bin;
 
+    /// <summary>
+    /// Compares each data cell with the value the compared table would look up at this table's
+    /// axis values (interpolating between its breakpoints), not with the cell at the same
+    /// position, so tables whose axes differ can be compared. Axis cells are still compared
+    /// position by position. Only curves and maps have axes to look up.
+    /// </summary>
+    public bool InterpolateCompare { get; set; }
+
     public double MinBin { get; protected set; }
     public double MaxBin { get; protected set; }
     public double MinCompare { get; protected set; }
@@ -490,8 +498,52 @@ public abstract class Table
     {
         int n = Math.Min(mine.Length, theirs.Length);
         for (int i = 0; i < n; i++)
-            mine[i].CompareToValue = type == CompareValueType.Bin ? theirs[i].BinValue : theirs[i].OriginalValue;
+            mine[i].CompareToValue = CompareSource(theirs[i], type);
     }
+
+    /// <summary>The raw value of a compared cell that differences are taken against.</summary>
+    protected static double CompareSource(DataCell cell, CompareValueType type) =>
+        type == CompareValueType.Bin ? cell.BinValue : cell.OriginalValue;
+
+    /// <summary>
+    /// Raw breakpoints of this table's axis (as it is now) and of the compared table's, for
+    /// looking values up. Static axes have no values, so both are taken by position then.
+    /// </summary>
+    protected static (double[] Mine, double[] Theirs) LookupAxes(Table1D mine, Table1D theirs, CompareValueType type)
+    {
+        bool byPosition = mine.Cells.Any(c => c.IsStatic) || theirs.Cells.Any(c => c.IsStatic);
+        return (mine.Cells.Select((c, i) => byPosition ? i : c.BinValue).ToArray(),
+                theirs.Cells.Select((c, i) => byPosition ? i : CompareSource(c, type)).ToArray());
+    }
+
+    /// <summary>
+    /// Where <paramref name="x"/> falls on <paramref name="axis"/> (ascending or descending): the
+    /// breakpoints either side of it and how far it is from the first to the second (0..1).
+    /// Values beyond either end are held at that end, as an ECU lookup does.
+    /// </summary>
+    public static (int Lo, int Hi, double T) Bracket(IReadOnlyList<double> axis, double x)
+    {
+        int last = axis.Count - 1;
+        if (last <= 0)
+            return (0, 0, 0);
+        bool descending = axis[last] < axis[0];
+        if (descending ? x >= axis[0] : x <= axis[0])
+            return (0, 0, 0);
+        for (int i = 0; i < last; i++)
+        {
+            double a = axis[i], b = axis[i + 1];
+            if (x == a)
+                return (i, i, 0);
+            if (x == b)
+                return (i + 1, i + 1, 0);
+            if (descending ? x < a && x > b : x > a && x < b)
+                return (i, i + 1, (x - a) / (b - a));
+        }
+        return (last, last, 0);
+    }
+
+    /// <summary>Linear interpolation that returns the end values exactly.</summary>
+    protected static double Lerp(double a, double b, double t) => t == 0 ? a : a + (b - a) * t;
 
     // ----- text -----
 
