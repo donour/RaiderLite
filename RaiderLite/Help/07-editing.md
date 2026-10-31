@@ -25,6 +25,11 @@ Type a number while a table has the focus: it goes into the **Value** box on the
 You can also type into the **Value** box directly and click its **✓** (set) or **×** (multiply)
 button.
 
+A value that's too large or too small for the table is stored as the nearest value it can hold.
+But if the definition's scaling can't convert what you typed into a raw value at all (for example,
+it would divide by zero), the cell is left unchanged and the status bar says how many cells
+weren't changed.
+
 ## Stepping values up and down
 
 The ribbon's **Adjust** group holds two steps, **Fine** and **Coarse**, taken from the table's

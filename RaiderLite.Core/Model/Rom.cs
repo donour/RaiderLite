@@ -62,6 +62,15 @@ public sealed class Rom
     /// Why no value of the image may be changed (a locked revision), or null. Edits then throw
     /// <see cref="ImageReadOnlyException"/>, so the editor can offer an alternative.
     /// </summary>
+    /// <summary>
+    /// How many cell writes were refused because the value wasn't a finite number: the scaling's
+    /// to_byte gave NaN or infinity for what was typed. The editor compares it before and after an
+    /// edit to tell the user that some cells were left unchanged.
+    /// </summary>
+    public int RejectedWrites { get; private set; }
+
+    internal void NoteRejectedWrite() => RejectedWrites++;
+
     public string? ReadOnlyReason
     {
         get => _readOnlyReason;

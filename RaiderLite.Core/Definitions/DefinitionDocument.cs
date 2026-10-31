@@ -39,8 +39,8 @@ public sealed class DefinitionDocument
     {
         try
         {
-            var root = LoadElement(path, depth: 0);
-            return new DefinitionDocument(System.IO.Path.GetFullPath(path), root);
+            using var reader = XmlReader.Create(path, ReaderSettings);
+            return FromDocument(XDocument.Load(reader, LoadOptions.None), System.IO.Path.GetFullPath(path));
         }
         catch (Exception ex) when (ex is XmlException or IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
@@ -50,49 +50,26 @@ public sealed class DefinitionDocument
 
     public static DefinitionDocument Parse(string xml, string path = "")
     {
-        var doc = XDocument.Parse(xml);
-        return new DefinitionDocument(path, doc.Root ?? throw new DefinitionException("empty document"));
+        using var reader = XmlReader.Create(new StringReader(xml), ReaderSettings);
+        return FromDocument(XDocument.Load(reader, LoadOptions.None), path);
     }
 
-    private static XElement LoadElement(string path, int depth)
-    {
-        if (depth > 16)
-            throw new DefinitionException("XInclude nesting too deep");
-        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Ignore, XmlResolver = null };
-        using var reader = XmlReader.Create(path, settings);
-        var doc = XDocument.Load(reader, LoadOptions.None);
-        var root = doc.Root ?? throw new DefinitionException($"{path}: empty document");
-        ExpandIncludes(root, System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path)) ?? ".", depth);
-        return root;
-    }
+    /// <summary>
+    /// No DTDs (so no entity expansion) and nothing fetched from outside the file.
+    /// </summary>
+    private static readonly XmlReaderSettings ReaderSettings = new() { DtdProcessing = DtdProcessing.Ignore, XmlResolver = null };
 
-    /// <summary>Replaces xi:include elements (href, optional xpointer(/a/b/*)) with the referenced XML.</summary>
-    private static void ExpandIncludes(XElement root, string baseDir, int depth)
+    private static DefinitionDocument FromDocument(XDocument doc, string path)
     {
-        foreach (var include in root.Descendants(XInclude + "include").ToList())
-        {
-            var href = (string?)include.Attribute("href");
-            if (string.IsNullOrEmpty(href))
-                continue;
-            var target = System.IO.Path.Combine(baseDir, href);
-            var included = LoadElement(target, depth + 1);
-
-            var replacement = new List<XElement> { included };
-            var xpointer = (string?)include.Attribute("xpointer");
-            if (xpointer != null && xpointer.StartsWith("xpointer(", StringComparison.Ordinal) && xpointer.EndsWith(')'))
-            {
-                var steps = xpointer["xpointer(".Length..^1].Trim('/').Split('/');
-                IEnumerable<XElement> current = [new XElement("doc", included)];
-                foreach (var step in steps)
-                {
-                    current = step == "*"
-                        ? current.SelectMany(e => e.Elements())
-                        : current.SelectMany(e => e.Elements().Where(c => c.Name.LocalName == step));
-                }
-                replacement = current.ToList();
-            }
-            include.ReplaceWith(replacement);
-        }
+        var root = doc.Root ?? throw new DefinitionException($"{System.IO.Path.GetFileName(path)}: empty document");
+        // RomRaider expands xi:include; RaiderLite deliberately doesn't. An include can name any
+        // file, including \\host\share paths that make Windows connect to another computer and
+        // send it the user's login hash. Fail loudly rather than load a definition with parts
+        // silently missing.
+        if (root.DescendantsAndSelf().Any(e => e.Name.Namespace == XInclude))
+            throw new DefinitionException(
+                $"{System.IO.Path.GetFileName(path)}: XInclude (xi:include) isn't supported. Merge the included files into one definition file.");
+        return new DefinitionDocument(path, root);
     }
 
     /// <summary>Every rom whose own internal ID matches the image, most specific (longest ID) first,

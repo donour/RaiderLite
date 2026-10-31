@@ -917,10 +917,15 @@ public sealed class TableForm : Form
             _main.SetStatus($"{Table.Name} is locked.");
             return;
         }
+        int rejectedBefore = Table.Rom?.RejectedWrites ?? 0;
         try
         {
             using (Table.Rom?.History.Begin(name))
                 action(Table);
+            int rejected = (Table.Rom?.RejectedWrites ?? 0) - rejectedBefore;
+            if (rejected > 0)
+                _main.SetStatus($"{name}: {rejected} cell{(rejected == 1 ? " was" : "s were")} left unchanged; " +
+                                "the definition's scaling gives no valid raw value for that input.");
         }
         catch (UserLevelException ex)
         {

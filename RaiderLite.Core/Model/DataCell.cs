@@ -273,8 +273,15 @@ public sealed class DataCell
     /// <exception cref="ImageReadOnlyException">The image is read-only (a locked revision).</exception>
     public void SetBinValue(double newBinValue)
     {
-        if (IsStatic || double.IsNaN(newBinValue) || BinValue == newBinValue || Table.Locked || Table.IsChecksumFixTable)
+        if (IsStatic || BinValue == newBinValue || Table.Locked || Table.IsChecksumFixTable)
             return;
+        // NaN or infinity means "no value" (e.g. to_byte divided by zero). Clamping infinity would
+        // quietly write the storage type's limit, so refuse instead.
+        if (!double.IsFinite(newBinValue))
+        {
+            _rom.NoteRejectedWrite();
+            return;
+        }
         if (_rom.ReadOnlyReason is { } reason)
             throw new ImageReadOnlyException(reason);
 
@@ -366,8 +373,11 @@ public sealed class DataCell
     {
         var scale = Table.CurrentScale;
         double result = scale.ToBin(real, Table.StorageType, Table.Signed);
-        if (double.IsNaN(result))
+        if (!double.IsFinite(result))
+        {
+            _rom.NoteRejectedWrite();
             return;
+        }
         if (Table.StorageType != StorageType.Float)
             result = Math.Round(result, MidpointRounding.AwayFromZero);
         if (BinValue != result)
@@ -386,8 +396,11 @@ public sealed class DataCell
         for (int attempt = 0; attempt < 32; attempt++)
         {
             double incResult = scale.ToBin(oldValue + increment, Table.StorageType, Table.Signed);
-            if (double.IsNaN(incResult))
+            if (!double.IsFinite(incResult))
+            {
+                _rom.NoteRejectedWrite();
                 return;
+            }
 
             if (Table.StorageType == StorageType.Float)
             {

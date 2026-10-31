@@ -429,9 +429,8 @@ public static class ExpressionEngine
                     });
                 case "min": return Binary(Math.Min);
                 case "max": return Binary(Math.Max);
-                case "rand":
-                    Arity(0);
-                    return static _ => Random.Shared.NextDouble();
+                // JEP's rand() is deliberately missing: a scaling must give the same value every
+                // time, or to_byte would write random bytes into the image.
                 case "if":
                     if (a.Count is not (3 or 4))
                         throw Error("Function 'if' expects 3 or 4 arguments");

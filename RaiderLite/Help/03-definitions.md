@@ -44,7 +44,7 @@ file you choose:
 
 ## What is supported
 
-- `<rom base="...">` inheritance, `<scalingbase>`, child ROMs and `xi:include` files.
+- `<rom base="...">` inheritance, `<scalingbase>` and child ROMs.
 - Every RomRaider table type: single values and arrays (1D), curves (2D), maps (3D, including
   swapped, flipped and skipped layouts), switches and bit switches.
 - Every storage type: signed or unsigned 8, 16 and 32-bit integers, floats, and MOVI20/MOVI20S,
@@ -53,6 +53,11 @@ file you choose:
 - User levels and locked tables. A table that its definition locks can't be edited.
 - These checksums: STD, ALT, ALT2, BYTEXOR, COPY, Motronic single and double, E38 PCM, and
   Subaru's "Checksum Fix" table.
+
+Unlike RomRaider, RaiderLite doesn't support `xi:include`, which pulls other files into a
+definition. An include can name any file on your computer or network, so a definition that
+contains one isn't loaded: RaiderLite reports an error instead. To use such a definition, paste
+the included files' contents in place of the `xi:include` lines.
 
 When a definition has a mistake that RaiderLite can work around, it records a load warning
 (listed in **File > Image Properties**) and carries on. For example, if a `to_byte` expression is

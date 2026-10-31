@@ -61,7 +61,8 @@ RaiderLite.slnx
   expression/to_byte/format/units/fine+coarse increment/min/max. Scale round-trip validation warning.
 - `<state name data>` for switches, `<bit name position>` for bitwise switches, `<data>` for static axes,
   `<description>` element, `<checksum type=... />`.
-- XInclude (`xi:include href=`) expansion.
+- XInclude is deliberately not supported: a definition containing `xi:include` is rejected with an error
+  (an include could read any file, or reach a `\\host\share` path and leak the Windows login hash).
 
 ### Binary codec
 - Big/little endian, signed/unsigned 8/16/32, IEEE float (RomRaider's legacy float-endian quirk),

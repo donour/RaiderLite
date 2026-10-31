@@ -27,6 +27,10 @@ usually means the definition doesn't fit the image. See [Saving](images#saving).
 The caption under the table's data says why. See
 [Read-only tables](editing#read-only-tables).
 
+If the table isn't read-only but some cells stay unchanged and the status bar says "left
+unchanged", the definition's scaling gives no valid raw value for what you typed. Try a different
+value, or check the scaling's `to_byte` expression in the definition.
+
 ## A table is missing from the list
 
 - It may be above your user level: raise it in **View > User Level**, or tick **View > Display
