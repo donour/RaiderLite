@@ -11,6 +11,10 @@ To open it, choose **Edit > Definition Manager** or click **Definitions** on the
 - **Add** adds one or more `.xml` definition files.
 - **Remove** takes the selected files off the list. The files themselves aren't touched.
 - **Move Up** and **Move Down** change the order of the list.
+- **Refresh from Web** downloads the latest Lotus definitions (every `.xml` file in
+  [romraider-defs](https://github.com/donour/LotusECU-T4e/tree/master_t6e/romraider-defs)) into a
+  `Definitions` folder next to your settings, replacing earlier downloads, and puts them at the
+  top of the list. If any file fails to download, nothing is changed.
 
 The list is saved in your settings, so you only need to set it up once.
 
