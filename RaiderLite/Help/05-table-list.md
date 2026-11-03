@@ -13,6 +13,12 @@ in each category.
   a map, or a switch.
 - Tables above your user level are shown in grey (see the View menu below).
 - Hover over a table to see its shape, its address and its description.
+- A category with more than 30 tables is split into folders by table name, shown in *italics*.
+  Tables sharing a word after the category's common prefix go in a folder named after that
+  word, such as **P0101** for the four P0101 tables in **obd**. If there are still too many,
+  folders are bucketed by their first characters, such as **P01…**. Turn this off, or change
+  the number, with **View > Group Large Categories** and in [Settings](settings). The definition
+  isn't changed.
 - Right-click an image for Save, Save As, Close, Properties and the tune library commands.
   Right-click a table to open it or see its properties.
 
@@ -28,6 +34,7 @@ press **Ctrl+F** to go there first. **Esc** clears the filter, and **Down** move
 | **User Level** | Sets which tables you can edit, from 1 (Beginner) to 5 (Debug). The definition gives each table a level, and tables above yours are read-only. |
 | **Display High Level Tables** | Sets whether tables above your user level are listed at all. |
 | **Sort Tables Alphabetically** | Sorts the tables in each category by name instead of in definition order. |
+| **Group Large Categories** | Splits categories with many tables into folders by table name (see above). |
 | **Expand All** / **Collapse All** | Opens or closes every category. |
 | **Find Table** (Ctrl+F) | Moves to the filter box. |
 | **Tunes** / **Tables** | Switches the left panel's tab. |

@@ -14,6 +14,7 @@ saved when you click **OK**, and kept when you upgrade or uninstall RaiderLite.
 | **Allow editing debug-level (5) tables** | Without this, debug-level tables stay read-only even at user level 5. |
 | **Highlight values outside the storage range** | Shows stored values outside the range of their storage type in the **Warning** colour. |
 | **Sort tables alphabetically** | Sorts the tables in each category by name. |
+| **Group categories with many tables into folders by name** and **Group categories with more tables than** | Splits a category with more tables than the number into folders by the words in the table names, shown in italics. Also on the **View** menu. See [Finding tables](table-list). |
 | **Open and close tables with a single click** | When this isn't ticked, double-click a table to open or close it. |
 | **Show graphs when opening tables** | Opens curves and maps with their graph showing. Ctrl+G still shows or hides it. |
 | **Colour axis cells** | Shades axis cells like data cells, instead of using the **Axis** colour. |

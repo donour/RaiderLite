@@ -35,6 +35,7 @@ public sealed partial class MainForm : Form
     private readonly ToolStripMenuItem[] _userLevelItems = new ToolStripMenuItem[5];
     private readonly ToolStripMenuItem _displayHighTables = new("Display &High Level Tables");
     private readonly ToolStripMenuItem _sortTree = new("&Sort Tables Alphabetically");
+    private readonly ToolStripMenuItem _groupTree = new("&Group Large Categories") { ToolTipText = "Split categories with many tables into folders by table name" };
     private readonly System.Windows.Forms.Timer _filterTimer = new() { Interval = 250 };
     private readonly MdiClient _mdiClient;
     private TableForm? _activeTable;
@@ -258,7 +259,14 @@ public sealed partial class MainForm : Form
             RebuildTree();
         };
         view.DropDownItems.Add(_displayHighTables);
+        _groupTree.Click += (_, _) =>
+        {
+            AppSettings.Current.GroupLargeCategories = !AppSettings.Current.GroupLargeCategories;
+            UpdateUserLevelMenu();
+            RebuildTree();
+        };
         view.DropDownItems.Add(_sortTree);
+        view.DropDownItems.Add(_groupTree);
         view.DropDownItems.Add(new ToolStripSeparator());
         view.DropDownItems.Add(new ToolStripMenuItem("&Expand All", null, (_, _) => _tree.ExpandAll()));
         view.DropDownItems.Add(new ToolStripMenuItem("&Collapse All", null, (_, _) => CollapseToRoms()));
@@ -299,6 +307,7 @@ public sealed partial class MainForm : Form
             _userLevelItems[i].Checked = AppSettings.Current.UserLevel == i + 1;
         _displayHighTables.Checked = AppSettings.Current.DisplayHighTables;
         _sortTree.Checked = AppSettings.Current.SortTableTree;
+        _groupTree.Checked = AppSettings.Current.GroupLargeCategories;
     }
 
     private void SetUserLevel(int level)
@@ -1034,39 +1043,29 @@ public sealed partial class MainForm : Form
                 if (settings.SortTableTree)
                     tables = tables.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase);
 
+                var visible = tables.Where(t => (t.UserLevel <= settings.UserLevel || settings.DisplayHighTables) &&
+                                                (!filtering || t.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)));
                 int shown = 0;
-                foreach (var table in tables)
+                // Grouping needs a category's whole table list, so place tables a category at a time
+                // (categories in order of first appearance, as before).
+                foreach (var categoryTables in visible.GroupBy(t => t.Category, StringComparer.OrdinalIgnoreCase))
                 {
-                    bool tooHigh = table.UserLevel > settings.UserLevel;
-                    if (tooHigh && !settings.DisplayHighTables)
-                        continue;
-                    if (filtering && !table.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    var parent = romNode;
-                    foreach (var category in table.Category.Split("//"))
+                    var list = categoryTables.ToList();
+                    var groups = settings.GroupLargeCategories
+                        ? TableTreeGrouping.Group([.. list.Select(t => t.Name)], settings.TableGroupThreshold)
+                        : null;
+                    for (int i = 0; i < list.Count; i++)
                     {
-                        var existing = parent.Nodes.Cast<TreeNode>().FirstOrDefault(n => n.Tag is string && string.Equals(n.Text, category, StringComparison.OrdinalIgnoreCase));
-                        if (existing == null)
-                        {
-                            existing = new TreeNode(category) { Tag = category, ImageIndex = TreeIcons.Category, SelectedImageIndex = TreeIcons.Category };
-                            InsertCategory(parent, existing, settings.SortTableTree);
-                        }
-                        parent = existing;
+                        var table = list[i];
+                        bool tooHigh = table.UserLevel > settings.UserLevel;
+                        var parent = romNode;
+                        foreach (var category in table.Category.Split("//"))
+                            parent = Folder(parent, category, generated: false, settings.SortTableTree);
+                        foreach (var group in groups?[i] ?? [])
+                            parent = Folder(parent, group, generated: true, settings.SortTableTree);
+                        AddTableNode(parent, table, tooHigh);
+                        shown++;
                     }
-
-                    var node = new TreeNode(table.Name) { Tag = table, ToolTipText = TableToolTip(table) };
-                    node.ImageIndex = node.SelectedImageIndex = TreeIcons.For(table);
-                    if (tooHigh)
-                        node.ForeColor = SystemColors.GrayText;
-                    if (table.IsChanged)
-                    {
-                        node.NodeFont = UiFonts.Bold;
-                        _boldTables.Add(table);
-                    }
-                    parent.Nodes.Add(node);
-                    _tableNodes[table] = node;
-                    shown++;
                 }
 
                 if (filtering && shown == 0)
@@ -1093,13 +1092,55 @@ public sealed partial class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Marks a folder made by <see cref="TableTreeGrouping"/> from table names, as opposed to a
+    /// category from the definition (whose tag is the category name).
+    /// </summary>
+    private sealed record GeneratedGroup(string Name);
+
+    private static TreeNode Folder(TreeNode parent, string text, bool generated, bool sorted)
+    {
+        var existing = parent.Nodes.Cast<TreeNode>().FirstOrDefault(n =>
+            (generated ? n.Tag is GeneratedGroup : n.Tag is string) && string.Equals(n.Text, text, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+            return existing;
+        var node = new TreeNode(text) { ImageIndex = TreeIcons.Category, SelectedImageIndex = TreeIcons.Category };
+        if (generated)
+        {
+            node.Tag = new GeneratedGroup(text);
+            node.NodeFont = UiFonts.Italic;
+            node.ToolTipText = "Grouped by table name (View > Group Large Categories)";
+        }
+        else
+        {
+            node.Tag = text;
+        }
+        InsertCategory(parent, node, sorted);
+        return node;
+    }
+
+    private void AddTableNode(TreeNode parent, Table table, bool tooHigh)
+    {
+        var node = new TreeNode(table.Name) { Tag = table, ToolTipText = TableToolTip(table) };
+        node.ImageIndex = node.SelectedImageIndex = TreeIcons.For(table);
+        if (tooHigh)
+            node.ForeColor = SystemColors.GrayText;
+        if (table.IsChanged)
+        {
+            node.NodeFont = UiFonts.Bold;
+            _boldTables.Add(table);
+        }
+        parent.Nodes.Add(node);
+        _tableNodes[table] = node;
+    }
+
     private static void InsertCategory(TreeNode parent, TreeNode category, bool sorted)
     {
-        // Categories go above tables, in definition order unless sorting.
+        // Folders (categories and generated groups) go above tables, in definition order unless sorting.
         int index = 0;
         foreach (TreeNode n in parent.Nodes)
         {
-            if (n.Tag is not string)
+            if (n.Tag is not (string or GeneratedGroup))
                 break;
             if (sorted && string.Compare(n.Text, category.Text, StringComparison.OrdinalIgnoreCase) > 0)
                 break;

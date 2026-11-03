@@ -1,3 +1,5 @@
+using RaiderLite.Core.Layout;
+
 namespace RaiderLite;
 
 /// <summary>Editor settings.</summary>
@@ -12,6 +14,8 @@ public sealed class SettingsForm : DialogBase
     private readonly CheckBox _valueLimit = new() { Text = "Highlight values outside the storage range", AutoSize = true };
     private readonly CheckBox _colorAxis = new() { Text = "Colour axis cells", AutoSize = true };
     private readonly CheckBox _sortTree = new() { Text = "Sort tables alphabetically", AutoSize = true };
+    private readonly CheckBox _groupTree = new() { Text = "Group categories with many tables into folders by name", AutoSize = true };
+    private readonly NumericUpDown _groupThreshold = new() { Minimum = TableTreeGrouping.MinThreshold, Maximum = 1000, Width = 70 };
     private readonly CheckBox _showGraphs = new() { Text = "Show graphs when opening tables (Ctrl+G toggles)", AutoSize = true };
     private readonly CheckBox _singleClick = new() { Text = "Open and close tables with a single click (otherwise double-click)", AutoSize = true };
     private readonly NumericUpDown _cellWidth = new() { Minimum = 24, Maximum = 200, Width = 70 };
@@ -38,6 +42,8 @@ public sealed class SettingsForm : DialogBase
         _valueLimit.Checked = settings.ValueLimitWarning;
         _colorAxis.Checked = settings.ColorAxis;
         _sortTree.Checked = settings.SortTableTree;
+        _groupTree.Checked = settings.GroupLargeCategories;
+        _groupThreshold.Value = Math.Clamp(settings.TableGroupThreshold, TableTreeGrouping.MinThreshold, 1000);
         _singleClick.Checked = settings.SingleClickTables;
         _showGraphs.Checked = settings.ShowGraphsByDefault;
         _cellWidth.Value = Math.Clamp(settings.CellWidth, 24, 200);
@@ -62,6 +68,8 @@ public sealed class SettingsForm : DialogBase
         Full(_saveDebug);
         Full(_valueLimit);
         Full(_sortTree);
+        Full(_groupTree);
+        Row("Group categories with more tables than", _groupThreshold);
         Full(_singleClick);
         Full(_showGraphs);
         Full(_colorAxis);
@@ -154,6 +162,8 @@ public sealed class SettingsForm : DialogBase
         s.ValueLimitWarning = _valueLimit.Checked;
         s.ColorAxis = _colorAxis.Checked;
         s.SortTableTree = _sortTree.Checked;
+        s.GroupLargeCategories = _groupTree.Checked;
+        s.TableGroupThreshold = (int)_groupThreshold.Value;
         s.SingleClickTables = _singleClick.Checked;
         s.ShowGraphsByDefault = _showGraphs.Checked;
         s.CellWidth = (int)_cellWidth.Value;

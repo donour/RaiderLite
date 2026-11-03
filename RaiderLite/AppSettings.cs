@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RaiderLite.Core.Model;
+using RaiderLite.Core.Layout;
 
 namespace RaiderLite;
 
@@ -72,6 +73,9 @@ public sealed class AppSettings
 
     // Table tree
     public bool SortTableTree { get; set; }
+    /// <summary>Split categories with more than <see cref="TableGroupThreshold"/> tables into folders by table name.</summary>
+    public bool GroupLargeCategories { get; set; } = true;
+    public int TableGroupThreshold { get; set; } = TableTreeGrouping.DefaultThreshold;
     /// <summary>Click a table in the tree to open it, click again to close it (RomRaider's default).</summary>
     public bool SingleClickTables { get; set; } = true;
 
